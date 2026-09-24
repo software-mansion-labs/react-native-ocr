@@ -43,8 +43,11 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
   )
 endif()
 
-# The static OpenCV was built with the OpenMP parallel backend.
-target_link_options(${CMAKE_PROJECT_NAME} PRIVATE -fopenmp -static-openmp)
+# The static OpenCV was built with the OpenMP parallel backend, but no OpenMP
+# runtime is linked here: react-native-executorch links one statically into
+# its own library and the LLVM runtime aborts when a second copy registers in
+# the process. cpp/core/omp_serial.cpp supplies the handful of entry points
+# OpenCV references and runs them single-threaded.
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
     ReactAndroid::jsi
