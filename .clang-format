@@ -1,0 +1,14 @@
+# clang-format configuration for the C/C++/Objective-C sources. LLVM-based with
+# attached braces, 4-space indentation, and no fixed column limit, matching
+# react-native-executorch so the ported kernels keep their shape.
+BasedOnStyle: LLVM
+Standard: c++20
+UseTab: Never
+IndentWidth: 4
+TabWidth: 4
+ColumnLimit: 0
+AccessModifierOffset: -4
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: false
+FixNamespaceComments: false
+InsertNewlineAtEOF: true

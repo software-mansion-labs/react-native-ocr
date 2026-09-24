@@ -1,0 +1,17 @@
+{
+  "name": "React Native OCR",
+  "tsconfig": "tsconfig.build.json",
+  "out": "./docs",
+  "includeVersion": true,
+  "entryPointStrategy": "resolve",
+  "entryPoints": ["./src/index.ts"],
+  "categoryOrder": ["Hooks", "Tasks", "Functions", "Types", "Constants", "Models", "*"],
+  "categorizeByGroup": false,
+  "excludeExternals": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "disableSources": true,
+  "cleanOutputDir": true,
+  "hideGenerator": true
+}

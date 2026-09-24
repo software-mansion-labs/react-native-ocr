@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig",
+  "exclude": ["example", "lib", "__tests__", "jest.config.js", "eslint.config.mjs"]
+}
