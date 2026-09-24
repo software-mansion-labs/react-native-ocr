@@ -1,0 +1,177 @@
+# react-native-ocr: advanced OCR as a hybrid (TypeScript + native) package on top of react-native-executorch
+
+## Context
+
+PR #1322 scoped react-native-executorch (RNE) OCR down to detect + recognize (PP-OCRv6 only) so RNE matches the PaddleOCR reference SDK. The full advanced pipeline is preserved at commit `3f83e48a18bdb5c73ff5d65d364129b29e9a1578` of the RNE monorepo (a sibling branch off `bce2a5e`, never merged, not an ancestor of main; read files with `git show 3f83e48a1:<path>` in that monorepo). Its model exporters live on the `converge-ocr-exporter` branch of the export-scripts repo.
+
+Decision: build the advanced features as a **separate GitHub repo and npm package `react-native-ocr`**. It is a **hybrid package**: TypeScript for the pipeline, plus its own small native module (C++ with OpenCV, JSI) for the kernels that `3f83e48` had natively and RNE main dropped. **No changes to react-native-executorch.** RNE stays a peer dependency and the package uses only RNE's public API for models, tensors and the existing `cv` ops. First release targets full parity with `3f83e48`.
+
+Decisions taken with the user:
+- Location: separate GitHub repository.
+- Structure: single package (not a rag-style core + adapter split).
+- Scope: full parity with `3f83e48`.
+- Native: nothing added to RNE. `react-native-ocr` ships its own native module.
+
+This plan is written so another model can start implementation from it in the new repo. Paths written as `RNE:<path>` refer to the RNE monorepo (`packages/react-native-executorch/...` on main unless a commit is given).
+
+---
+
+## What RNE (main, 0.11.0) provides publicly and the package relies on
+
+All verified in `RNE:src/index.ts`:
+
+- Core: `loadModel`, `Model.execute(method, inputs, outputs)`, `Model.schema`, `tensor(dtype, shape, data?)`, `Tensor.through/throughIf/copyTo/setData/getData/dispose`, `wrapAsync(fn, runtime)`, `defaultWorkletRuntime`, `createResourceScope`, `RnExecuTorchError(code, msg)`, `isRnExecuTorchError`.
+- `schema`: `validateSpec`, `method`, `constraint.linear/equality` (was `constr.linear` at 3f83e48), `f32/i64/i32/ui8/bool`, `StaticDim`, `DynamicDim`, `ConcreteDim`, `DimRef`, `LinearConstraint`, `ModelSpec`, `SpecMatch.dims.dynamic/constant/enum/range`.
+- `cv`: `ImageBuffer`, `ImageFormat`, `FORMAT_CHANNELS`, `FORMAT_CONVERSION`, `resize`, `cvtColor`, `toChannelsFirst`, `normalize`, `NormalizeOptions`, `rectifyQuad(src, dst, quad, {contentWidth, align, padValue})`, `orderQuad`, `quadSize`, `scaleQuad`, `boundingBoxOfPoints`, `interpolatePoint`, `Quad` (4-tuple), `BoundingBox`, `createImagePreprocessor(opts, shape)` (ImageBuffer input only), `extractDbnetTextQuads(probMap, {binThreshold, boxThreshold, unclipRatio, minBoxSide, maxCandidates}): Quad[]`.
+- `math`: `argmax`, `gather`, `softmax`, `sigmoid`, `threshold`.
+- Tasks/hooks: `createObjectDetector<F, L>(config, runtime)` with public `detectObjectsWorklet`; `useResourceDownload(config, options)` (walks nested objects, downloads every `https?://` string, byte-weighted progress); `useModel(createFn, resource)`; `download`.
+- `IMAGENET_NORM`, `getRegisteredBackends()`.
+
+Hard constraints learned from RNE's native side (this shapes the native design below):
+- RNE's JSI object `globalThis.__rnexecutorch_jsi__` is `@internal`, built privately in C++, with no registration hook. Never touch it.
+- RNE tensors are JSI host objects checked with RTTI (`obj.isHostObject<TensorHostObject>`). A second native binary cannot construct or unwrap them without recompiling RNE's core sources (duplicate symbols) or linking a library RNE does not export. **Therefore the package's native ops take and return plain `ArrayBuffer`s + explicit shapes, never RNE tensors.** TS bridges with `tensor.getData()` / `tensor.setData()` / `tensor(dtype, shape, data)`.
+- RNE's worklets reach native by capturing a module-level constant (`rnexecutorchJsi`) in the closure, not by reading `globalThis` inside the worklet. The package does the same with its own global.
+
+Not public in RNE, so re-implemented in TS in the package: `orderByReadingOrder`, `greedyCtcDecode`, size snapping, quad split helpers, tensor-input preprocessing chain, `variants()`/`DEFAULT` picking, `isEmulator` (unavailable; see 2.6).
+
+---
+
+## Part 1: the native module of `react-native-ocr`
+
+### 1.1 Shape
+- A TurboModule `RnOcr` with one synchronous method `install(): boolean` (iOS `ios/RnOcr.mm` with `RCT_EXPORT_SYNCHRONOUS_TYPED_METHOD`, Android `android/src/main/java/com/swmansion/rnocr/RnOcrModule.kt` + `android/cpp-adapter.cpp` JNI `nativeInstall`), modeled on `RNE:ios/RnExecutorch.mm` and `RNE:android/cpp-adapter.cpp`. Codegen spec `src/native/NativeRnOcr.ts` (`TurboModuleRegistry.getEnforcing<Spec>('RnOcr')`), `codegenConfig: { name: 'RnOcrSpec', type: 'modules', jsSrcsDir: 'src', android: { javaPackageName: 'com.swmansion.rnocr' } }`.
+- `install` builds a `jsi::Object`, installs the host functions below, and sets `globalThis.__rnocr_jsi__`. `cpp/RnOcr.cpp` mirrors `RNE:cpp/RnExecutorch.cpp`.
+- `src/native/bridge.ts`: on import, if `globalThis.__rnocr_jsi__` is missing call `NativeRnOcr.install()`, then `export const rnocrJsi = globalThis.__rnocr_jsi__` (marked `@internal`). Every TS wrapper is a `'worklet'` that captures `rnocrJsi` (same pattern as `RNE:src/native/bridge.ts`). **Phase 1 spike:** confirm a host function captured this way is callable from RNE's `defaultWorkletRuntime` (RNE relies on the same mechanism, so it is expected to work; verify on both platforms before porting anything else).
+- Errors: host functions are wrapped in a guard that converts C++ exceptions into `jsi::JSError` with a `code` property (`INVALID_ARGUMENT`, `EXECUTION_FAILED`), and TS re-raises them as `RnExecuTorchError(code, message)` so callers get one error type across both packages.
+
+### 1.2 Host functions (all buffer in, buffer out)
+Ports of the `3f83e48` C++ with `tensor::fromJs` replaced by `ArrayBuffer` views wrapped in `cv::Mat` (no copies inside native). Sources: `git show 3f83e48a1:RNE:cpp/extensions/cv/ocr_ops.cpp` (CRAFT branch: `Box`, `boxFromComponent`, `componentBoxes`, `extractCraft`) and `git show 3f83e48a1:RNE:cpp/extensions/cv/image_ops.cpp` (`warpByGrid` ~511-604, `rotate` ~455, `crop` ~609, `rectifyQuad` with `padMode` ~662).
+
+| Name | Signature (JSI) | Notes |
+|---|---|---|
+| `extractCraftTextBoxes` | `(heat: ArrayBuffer /*float32 [Hd,Wd,2] interleaved*/, hd, wd, opts: {textThreshold, linkThreshold, lowTextThreshold, minArea, charLevel, scale}) -> Float32Array` (5 per box: `x0,y0,x1,y1,angle`) | `charLevel` path (subtract affinity + erode/dilate, angle 0) included. `scale` replaces the old `targetHeight` (caller passes `inputHeight / hd`); `minArea` replaces the hard-coded 10. |
+| `warpByGrid` | `(src: ArrayBuffer /*uint8 HWC*/, srcH, srcW, ch, grid: ArrayBuffer /*float32 [2,gH,gW]*/, gH, gW, dstH, dstW, opts: {interpolation: 'nearest'|'linear'|'cubic', borderMode: 'replicate'|'constant', borderValue}) -> ArrayBuffer /*uint8 [dstH,dstW,ch]*/` | Grid is bilinearly upsampled to dst size natively, denormalized `[-1,1]` with `align_corners=true` against src dims, then `cv::remap`. |
+| `rotate` | `(src: ArrayBuffer, h, w, ch, deg: 90|180|270) -> ArrayBuffer` | `cv::rotate`. |
+| `crop` | `(src: ArrayBuffer, h, w, ch, x0, y0, x1, y1) -> ArrayBuffer` | ROI `copyTo`. |
+| `padCornerMean` | `(strip: ArrayBuffer /*uint8 [h,w,ch]*/, h, w, ch, targetW) -> ArrayBuffer /*[h,targetW,ch]*/` | Replaces `rectifyQuad padMode: 'cornerMean'`: fills the unused width with the mean of the four corner patches. The strip itself comes from RNE's public `rectifyQuad`. |
+
+CTC greedy decode stays in TS on RNE's public `math.argmax` + `math.gather` (copy from `RNE:src/extensions/cv/tasks/paddleOcr.ts` ~337); no native op needed.
+
+TS wrappers in `src/native/ops.ts`, each `'worklet'`, converting typed arrays to/from tensors at the call site:
+```ts
+export function extractCraftTextBoxes(heatmap: Tensor /*[1,Hd,Wd,2]*/, opts: CraftDecodeOptions): CraftBox[]   // getData -> native -> parse 5-per-box
+export function warpByGridTensor(page: Tensor, grid: Tensor, dstH: number, dstW: number, opts?): Tensor          // getData both -> native -> tensor('uint8', [dstH,dstW,ch], out)
+export function rotateTensor(page: Tensor, deg): Tensor
+export function cropTensor(page: Tensor, box: BoundingBox<'xyxy'>): Tensor
+export function padCornerMean(strip: Uint8Array, h, w, ch, targetW): Uint8Array
+```
+Each page-sized op costs one `getData` + one `setData` copy. Orientation and dewarp run once per page; crops are per region and small; the heatmap is half-resolution. Acceptable.
+
+### 1.3 Build integration
+- **iOS `react-native-ocr.podspec`**: `s.source_files = "ios/**/*.{h,mm}", "cpp/**/*.{h,cpp}"`, `install_modules_dependencies(s)`, C++20, `platforms ios 17.0`, `s.dependency "opencv-rne", "~> 4.11.0"` (the same pod RNE depends on, so the app links one OpenCV copy; RNE's podspec also allows `FastOpenCV-iOS` or an override via `rne-build-config.json`, so read `RNE:react-native-executorch.podspec` and mirror its `opencvPod` selection so both packages pick the same pod). Headers come from the pod. `s.static_framework = true`. No dependency on the RNE pod is needed since no RNE C++ is used.
+- **Android `android/build.gradle.kts` + `android/CMakeLists.txt`**: `externalNativeBuild` with CMake, `abiFilters arm64-v8a` (+ `x86_64` for emulator if RNE supports it), `-std=c++20`. OpenCV: link the static `libopencv_core.a` + `libopencv_imgproc.a` (+ kleidicv on arm64, as RNE does). Two supported sources, in order of preference:
+  1. **Reuse RNE's downloaded prebuilt OpenCV.** RNE's `postinstall` (`RNE:scripts/download-libs.js`) downloads `third-party/android/libs/opencv/<abi>/*.a` and `third-party/include/opencv2` into the installed RNE package when the app's `"react-native-executorch": {"features": [...]}` includes an OpenCV feature (`ocr` does). Resolve the RNE package dir in gradle with `node --print "require.resolve('react-native-executorch/package.json')"` (the pattern `RNE:packages/react-native-executorch-webrtc/react-native-executorch-webrtc.podspec` uses) and pass it as `-DRNE_DIR=` to CMake. Document that `react-native-ocr` requires the app to declare the `ocr` feature (it must anyway for RNE's own DBNet op).
+  2. **Fallback: own download.** If RNE's `third-party` layout changes, add a `scripts/download-opencv.js` postinstall that fetches the same OpenCV static libs from RNE's GitHub release assets (`v<nativeLibsVersion>-libs`) into `react-native-ocr/third-party/`. Keep the CMake path variable so switching is one line.
+- `react-native.config.js` with `packageImportPath` for Android autolinking; `files` in `package.json` include `android`, `ios`, `cpp`, `*.podspec`, `react-native.config.js`.
+- The `RNE:packages/react-native-executorch-webrtc` package is the closest layout template (podspec, gradle, CMake, `react-native.config.js`) but its build files are stale (prefab, legacy paths); copy the layout, write the build logic fresh per the above.
+
+### 1.4 Native tests
+`cpp/tests/` with GoogleTest (git submodule), plain C++ unit tests on the buffer-level functions (no Hermes/JSI needed, unlike RNE's suite): synthetic CRAFT heatmaps (single blob, affinity-linked pair with/without `charLevel`, threshold and `minArea` drops, `scale`), `warpByGrid` (identity grid copies, mirrored grid flips, coarse grid upsampled, dst larger than src, constant border), `rotate` all three angles, `crop`, `padCornerMean`. CMake finds host OpenCV via `find_package(OpenCV COMPONENTS core imgproc)`. CI job runs them on macOS with `brew install opencv`.
+
+---
+
+## Part 2: TypeScript side
+
+### 2.1 Scaffold (mirror software-mansion-labs/react-native-rag root layout + RNE's native layout)
+```
+react-native-ocr/
+  package.json  babel.config.js  tsconfig.json  tsconfig.build.json
+  eslint.config.mjs  lefthook.yml  typedoc.json  .yarnrc.yml  .nvmrc  .editorconfig
+  .github/workflows/ci.yml   (lint / typecheck / jest / bob build / cpp tests / example iOS+Android build)
+  react-native-ocr.podspec  react-native.config.js
+  ios/   android/   cpp/   cpp/tests/   third-party/googletest (submodule)
+  src/  __tests__/  example/  README.md  CONTRIBUTING.md  LICENSE
+```
+- `package.json`: name `react-native-ocr`, `main/module` `./lib/module/index.js`, `types` `./lib/typescript/src/index.d.ts`, `exports` `.` + `./package.json`; `files`: `src, lib, android, ios, cpp, *.podspec, react-native.config.js, !cpp/tests, !android/build, !ios/build`; bob targets `["module", {esm:true}]` + `["typescript", {project: "tsconfig.build.json"}]`; `workspaces: ["example"]`; `packageManager yarn@4`; `codegenConfig` as in 1.1.
+- `peerDependencies`: `react`, `react-native`, `react-native-executorch >=0.11.0`, `react-native-worklets >=0.10.0 <0.13.0`.
+- Root `package.json` carries `"react-native-executorch": { "features": ["ocr"] }` so RNE's postinstall downloads OpenCV for the workspace (RNE reads `INIT_CWD`, the workspace root on `yarn install`).
+- `babel.config.js` (library): same as RNE's (bob preset). Do NOT add `react-native-worklets/plugin` to the library build; `'worklet'` directives survive bob and the consuming app's Metro workletizes them, as RNE ships today. Add the plugin only in `example/babel.config.js` (copy `RNE:apps/computer-vision/babel.config.js`, wrapped with `react-native-builder-bob/babel-config` `getConfig`).
+- `tsconfig.json`: copy RNE's, `paths: {"react-native-ocr": ["./src/index"]}`, `verbatimModuleSyntax: true`. `tsconfig.build.json` excludes `example, lib, __tests__`.
+- Tooling: eslint + prettier + jsdoc rules (categories `Hooks`, `Tasks`, `Functions`, `Types`, `Constants`, `Models`), cspell, lefthook (lint, typecheck, format, commitlint), jest (`preset: react-native`, `moduleNameMapper` mocks for `react-native-worklets`, `react-native-executorch`, and `./native/bridge`, modeled on `RNE:__tests__/support/{fakeTensor,fakeOps,setup}.ts`), typedoc, release-it with conventional changelog, clang-format for `cpp/`.
+- `example/`: Expo app with deps from `RNE:apps/computer-vision/package.json` (expo ~56, expo-router, `@shopify/react-native-skia 2.6.2`, `expo-image-picker`, `expo-image-manipulator`, `react-native-worklets 0.10.3`, `react-native-reanimated 4.5.3`, `react-native-svg`, `react-native-executorch ^0.11.0`, `react-native-ocr workspace:*`), `app.json` from `RNE:apps/computer-vision/app.json` (newArch, minSdk 26, iOS 17). Screen ported from `git show 3f83e48a1:apps/computer-vision/app/ocr/index.tsx` (toggles: vertical, layout, orientation, tables, dewarp; draws `result.blocks` over `result.image`), with `ImageViewport`, `ModelPicker`, `ModelStatus`, `getImage` helpers from that app.
+
+### 2.2 `src/` layout and port map (sources under `RNE:src/` at 3f83e48a1 unless noted)
+
+| 3f83e48 source | `react-native-ocr/src/` | Port notes |
+|---|---|---|
+| `extensions/cv/tasks/ocr/ocr.ts` | `ocr/createOcr.ts` | `createOcr`, `OcrModel`, `OcrModelOptions`, `RunOcrOptions`, `OcrResult`, `DocumentBlock`, `mergeContainedRegions`, `makeBlock`. `rotate` -> `native/ops.rotateTensor`; `crop` -> `native/ops.cropTensor`. |
+| `extensions/cv/tasks/ocr/engine.ts` (execution + contract) | `ocr/engine.ts` | `OcrEngine`, `runOcrPass`, `runOcrPassOnTensor`, `resolveOcrContract`, `detectQuads`, `recognizeCanvas/NarrowQuad/Quad/GlyphColumn`, `readStackedBox`, `readCtcStride`, `exportedDim`, `refsEqual`. `constr.linear` -> `schema.constraint.linear`; `mapQuadToImage` -> `cv.scaleQuad(q, {from, to, resizeMode:'letterbox'})`; `ctcGreedyDecode` -> `ocr/ctc.ts`; `padMode` -> `ocr/recognizerCanvas.ts` (`'constant'`: single `rectifyQuad` with `padValue`; `'cornerMean'`: `rectifyQuad` into a `[recH, contentWidth, C]` strip, `getData`, `native/ops.padCornerMean`, `setData` into the canvas tensor). |
+| `engine.ts` input-size section (~58-214) | `ocr/sizing.ts` | `dimExtent`, `snapUpRange`, `snapUpEnum`, `snapDim` (10% snap-down for enums), `domainAdmits`, `resolveDetectorSize` (alignment-aware for CRAFT even sizes), `CtcStride`, `onCtcLattice`, `ctcTimesteps`, `resolveRecWidth`. |
+| `extensions/cv/tasks/ocr/detectors.ts` | `ocr/detectors.ts` | `TextBoxExtractor` (`inputAlignment`, `supportsCharLevel`, `outputSpec(dim)`, `outputShapes(inputSize)`, `extract(outputs, inputSize, charLevel)`), `makeCraftExtractBoxes`/`craftExtractBoxes` (`native/ops.extractCraftTextBoxes(outputs[0], {...thresholds, charLevel, scale: inputSize.height / outputs[0].shape[1]})` -> `geometry.groupBoxes`/`boxToQuad`, or per-glyph quads when `charLevel`), `makeDbnetExtractBoxes`/`dbnetExtractBoxes` (RNE `cv.extractDbnetTextQuads`; drop `quadsFromFlat`). |
+| `extensions/cv/tasks/ocr/geometry.ts` | `ocr/geometry.ts` | `Box`, `groupBoxes`, `boxToQuad`, `orderByReadingOrder`, `groupVerticalStacks`. `boundsOfPoints` -> `cv.boundingBoxOfPoints`; `Quad` becomes the 4-tuple; `boxesFromFlat` moves into the native wrapper. |
+| `extensions/cv/tasks/ocr/documentModels.ts` | `document/documentModels.ts` | `createDocumentModels`, `detectPageOrientation`, `dewarpPage` (`native/ops.warpByGridTensor`; variance check on the JS buffers already produced by the getData/setData bridge, so no extra copies), `recognizeTableStructure`, `clusterByGaps`, `fillTableCells`, `resolveDocumentModelsShapes`, types `DocumentModelsConfig`, `TableConfig`, `Orientation`. Use `createResourceScope()` instead of the manual `created[]` list. `processTensor` -> `ocr/preprocess.ts`. |
+| `extensions/cv/tasks/preprocessing.ts` `processTensor` (~131) | `ocr/preprocess.ts` | `createTensorPreprocessor(opts, outputShape)` pre-allocating scratch tensors; chain `resize -> cvtColor? -> toChannelsFirst -> normalize -> copyTo` via RNE `cv.*`. |
+| `extensions/cv/ops/quad.ts` extras (~169-249) | `ocr/quad.ts` | `splitWideQuad`, `splitTallQuad`, `boundingQuadOf`, `quadFromBounds` on the tuple `Quad` using `cv.interpolatePoint`/`cv.boundingBoxOfPoints`. |
+| `RNE:cpp/extensions/cv/{ocr_ops,image_ops}.cpp` at 3f83e48 | `cpp/` + `src/native/{bridge,ops,NativeRnOcr}.ts` | Part 1. |
+| main `RNE:src/extensions/cv/tasks/paddleOcr.ts` `greedyCtcDecode` | `ocr/ctc.ts` | `math.argmax` + `math.gather` over `[1,T,V]`, blank = 0. |
+| `extensions/cv/tasks/ocr/charsets.ts` | `charsets.ts` | verbatim (`alphabets` x8, `PPOCR_SYMBOLS`, ~87 KB, keep eslint-disable headers). |
+| `hooks/useOcr.ts` | `hooks/useOcr.ts` | verbatim; imports `useResourceDownload`, `useModel`, `ResourceOptions` from RNE. |
+| `constants.ts` (~1320-1428) | `constants.ts` | `DOC_LAYOUT_LABELS` (25 labels), `DocLayoutLabel`, `SLANET_STRUCTURE_VOCAB`, `RECOGNIZER_NORM {alpha:1/127.5, beta:-1}`, `RECOGNIZER_PAD_VALUE 128`. `IMAGENET_NORM` from RNE. |
+| `models.ts` (~828-935 and ~1547-1585) | `models.ts` | `EASYOCR_OPTS` (craft, IMAGENET_NORM, `cornerMean`), `PADDLE_PPOCRV6_OPTS` (dbnet, minConfidence 0.5, PPOCR_SYMBOLS), precision tables (EasyOCR int8/int8/fp16, PP-OCRv6 fp32/int8/fp16, DocLayout fp32/fp16/fp16, Helpers int8/int8/fp16), `makeEasyOcr`, `ppOcrV6`, `ppDocLayout` (labels, xyxy, stretch, linear, norm 1/255, conf 0.3, iou 1.0), `ppHelpers` + `SLANET_TABLE` (eos = vocab.indexOf('eos'), maxSteps 501). |
+| main `RNE:src/models.ts` (~63-172, private) | `registry/variants.ts` | 2.6. |
+| — | `index.ts` | exports `useOcr`, `createOcr`, `models`, detectors (`TextBoxExtractor`, `makeCraftExtractBoxes`, `craftExtractBoxes`, `CraftExtractOptions`, `makeDbnetExtractBoxes`, `dbnetExtractBoxes`, `DbnetExtractOptions`), `fillTableCells`, `alphabets`, `PPOCR_SYMBOLS`, `DOC_LAYOUT_LABELS`, types (`OcrModel`, `OcrModelOptions`, `RunOcrOptions`, `OcrResult`, `OcrDetection`, `DocumentBlock`, `DocumentModelsConfig`, `TableConfig`, `DocLayoutLabel`), re-export `type { Quad, NormalizeOptions, ImageBuffer } from 'react-native-executorch'`. |
+
+Worklet rule: within a file a `'worklet'` function must be defined above its callers; cross-file imports are fine.
+
+### 2.6 `DEFAULT` variant picking
+Port `variants()/family()/pickVariant()` from main `RNE:src/models.ts` (~63-172) using public `getRegisteredBackends()` and `Platform.OS`; `BACKEND_ORDER = { ios: ['coreml', 'xnnpack'], android: ['vulkan', 'xnnpack'] }`. RNE's emulator check is private; the package's own native module can expose `isEmulator()` cheaply (iOS `TARGET_OS_SIMULATOR`, Android `Build.FINGERPRINT` heuristics, same as `RNE:cpp` / `RNE:ios` do), so add it to the JSI object and use it. This makes `DEFAULT` behave exactly like RNE's.
+
+### 2.7 Feature list for v1 (the public contract of `react-native-ocr`)
+
+Pipeline
+1. `createOcr(config: OcrModel<L>, runtime?)` -> `{ runOcr, runOcrWorklet, dispose }`; `useOcr(config, options?)` -> `{ isReady, error, downloadProgress, resource, runOcr, runOcrWorklet }`. All models in a config (OCR + layout + document helpers) are downloaded with one weighted progress and disposed together; a failure mid-construction leaks nothing.
+2. One fused detect + recognize PTE per model, validated against its exported schema (`SCHEMA_MISMATCH`, `INVALID_ARGUMENT` coded errors); legal input sizes resolved from metadata (range/enum snap-up, 10% snap-down tolerance for sparse enums, detector alignment, recognizer width on the CTC lattice read from the model's linear constraint).
+3. Model families: EasyOCR (CRAFT + CRNN) in english, cyrillic, latin, japanese, zh_sim, korean, telugu, kannada; PaddleOCR PP-OCRv6 small. XNNPACK / CoreML / Vulkan variants with a per-platform `DEFAULT`.
+4. Pluggable detectors via `TextBoxExtractor`; built-ins `craftExtractBoxes` / `makeCraftExtractBoxes({textThreshold 0.4, linkThreshold 0.4, lowTextThreshold 0.7})` and `dbnetExtractBoxes` / `makeDbnetExtractBoxes({binThreshold 0.3, boxThreshold 0.6, unclipRatio 1.5, minBoxSide 3, maxCandidates 1000})`.
+5. Recognizer options on `OcrModelOptions`: `charset` (string or array), `minConfidence`, `detectorNorm`, `recognizerNorm`, `recognizerPadValue`, `recognizerPadMode: 'constant' | 'cornerMean'`, custom `decode(probs, charset)` worklet replacing greedy CTC.
+6. Line handling: wide lines squished up to 1.15x else split and read piecewise with length-weighted confidence; boxes under 3 px rejected; every detection is an oriented quad (TL,TR,BR,BL) in input pixels with text + confidence.
+7. Column-aware reading order (gutter sweep, 0.06 gap fraction, 0.3 line overlap) applied to flat detections and to blocks.
+
+Vertical text (per-run `vertical: true`)
+8. Glyph-stack clustering, tall-box char-level re-detection (CRAFT only; DBNet reads tall boxes horizontally), per-glyph recognition top-to-bottom; knobs `tallCropRatio` (1.5), `maxRedetections` (8), `verticalMinConfidence` (0.4).
+
+Layout (optional `layout: ObjectDetectorModel<'xyxy', L>`)
+9. PP-DocLayoutV3 (25 labels) composed via RNE `createObjectDetector`; per-region OCR on native crops with page-coordinate offsets; containment-based nested-region merge (0.8, PaddleX "large" mode; visual regions never swallow); `visualLabels` skip (default image, chart, seal); `tableLabel` (default table); `DocumentBlock { regionType, bbox, layoutConfidence, text, lines, isTable, tableHtml? }`; `regions` returned; blocks ordered with the same column-aware order.
+
+Document helpers (optional `documentModels: DocumentModelsConfig`, one fused PTE)
+10. Orientation: 4-class (0/90/180/270), applied when confidence >= `orientationMinConfidence` (0.85) via native `rotate`; per-run `orientation` flag defaulting to the config flag.
+11. Dewarp: UVDoc sampling grid applied by native `warpByGrid`; declined when the result keeps < `dewarpMinVarianceRatio` (0.5) of source variance; per-run `dewarp` flag.
+12. Table structure: SLANet encode + autoregressive decode over `structureVocab` (`eosTokenId`, `maxSteps` 501) into a `<tr>/<td>` skeleton, then `fillTableCells(html, lines)` assigns OCR lines by gap-clustered row/column centers; per-run `tables` flag (default on when a table config is loaded).
+13. `OcrResult.image`: the corrected frame (after orientation/dewarp) that all coordinates refer to; the input when nothing changed.
+
+Registry: `models.ocr.EASYOCR.<LANG>.{XNNPACK,COREML,VULKAN,DEFAULT}`, `models.ocr.PADDLE.PPOCRV6_SMALL.*`, `models.layoutDetection.PP_DOCLAYOUT.*`, `models.documentModels.PP_HELPERS.*` pointing at `https://huggingface.co/software-mansion/react-native-executorch-{easy-ocr,pp-ocrv6,pp-doclayout-v3,paddle-helpers}`. **Verify with `curl -I` that every `.pte` exists under the intended tag before wiring; RNE main only references `-pp-ocrv6`. Missing artifacts are a model-publishing task (exporters on `converge-ocr-exporter`), not a blocker for the pipeline with user-supplied paths.**
+
+Known limitations to document: wide-line segments abut without overlap; table fill drops lines inside a rowspan; DBNet has no char-level mode; each native page op costs one getData/setData round trip (orientation, dewarp: once per page); the app must declare the `ocr` feature for RNE so OpenCV is available to both packages.
+
+Charsets: bundled inline in v1 (~87 KB in bundles that import `models`). Later option: `charsetPath?: string` on `OcrModelOptions` resolved by `useResourceDownload`, with per-language JSON next to the `.pte`s.
+
+---
+
+## Phased delivery
+
+1. Scaffold repo, CI, example app skeleton. **Native spike:** TurboModule `install`, one trivial host function, capture in a worklet, call from RNE's `defaultWorkletRuntime` on iOS + Android; OpenCV linked from RNE's downloaded libs (Android) and the `opencv-rne` pod (iOS).
+2. Native ops: `extractCraftTextBoxes`, `warpByGrid`, `rotate`, `crop`, `padCornerMean`, `isEmulator`; C++ unit tests; TS wrappers in `src/native/ops.ts`.
+3. `constants.ts`, `charsets.ts`, `registry/variants.ts`, `models.ts`; pure-TS modules with jest: `geometry`, `quad`, `sizing`, `ctc`.
+4. `preprocess`, `recognizerCanvas`, `engine`, `detectors` (DBNet path), `createOcr` whole-page path, `useOcr` -> PaddleOCR parity with RNE's `createPaddleOcr` on the same images.
+5. CRAFT/EasyOCR + vertical text.
+6. Layout: object-detector composition, region merge, blocks, example toggles.
+7. Document helpers: orientation, table structure + cell fill, dewarp.
+8. README, typedoc, release-it; publish `0.1.0`.
+
+## Verification
+
+- C++ unit tests (GoogleTest, host OpenCV): CRAFT synthetic heatmaps (single blob, affinity-linked pair with/without `charLevel`, threshold and `minArea` drops, `scale`); `warpByGrid` (identity, mirrored, coarse-grid upsample, dst resize, constant border); `rotate` 90/180/270; `crop`; `padCornerMean`.
+- Parity check for the native CRAFT port: dump a few real `detect` outputs + decoded boxes from the `3f83e48` example app to JSON fixtures; assert the new op matches within 1 px / 1 degree.
+- Jest (mocked RNE + mocked native bridge): `groupBoxes`/`boxToQuad`, `orderByReadingOrder` on multi-column fixtures, `groupVerticalStacks`, `split*Quad`, `snapDim`/`resolveDetectorSize`/`domainAdmits`, `fillTableCells`/`clusterByGaps`, `mergeContainedRegions`, `pickVariant`, registry sanity (URL shapes, charset lengths).
+- `yarn typecheck`, `yarn lint`, `bob build`; `pod install` + Xcode build and `gradlew assembleDebug` of the example in CI.
+- Device (example app, iOS + Android, all three backends): PaddleOCR text + quads match RNE's `useOpticalCharacterRecognizer` on identical images; EasyOCR English on a printed page; a vertical-text sample; a multi-column page for layout and reading order; a rotated page for orientation; a phone photo of a curved page for dewarp; a table screenshot producing `tableHtml`. Confirm the worklet-runtime call path works with the app in release mode (JSI capture across runtimes).
