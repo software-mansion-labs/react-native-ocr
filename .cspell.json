@@ -1,0 +1,20 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "**/node_modules",
+    "**/Pods",
+    "lib",
+    "docs",
+    ".yarn",
+    "example/ios",
+    "example/android"
+  ],
+  "dictionaryDefinitions": [
+    {
+      "name": "project-words",
+      "path": ".cspell-wordlist.txt"
+    }
+  ],
+  "dictionaries": ["project-words"]
+}

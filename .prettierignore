@@ -1,0 +1,10 @@
+.yarn
+.github
+lib
+docs
+coverage
+example/ios
+example/android
+cpp
+android/build
+CHANGELOG.md

@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "react-native-ocr-example",
+    "slug": "react-native-ocr-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icons/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "rnocr-example",
+    "splash": {
+      "image": "./assets/icons/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.swmansion.rnocr.example",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Process photo from camera",
+        "NSPhotoLibraryUsageDescription": "Pick a photo to run OCR on"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.swmansion.rnocr.example",
+      "permissions": ["android.permission.CAMERA"]
+    },
+    "web": {
+      "favicon": "./assets/icons/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          },
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ]
+    ]
+  }
+}

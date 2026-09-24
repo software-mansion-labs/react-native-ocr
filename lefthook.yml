@@ -1,0 +1,32 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: '*.{js,mjs,ts,tsx}'
+      run: npx eslint {staged_files}
+    types:
+      glob: '*.{ts,tsx}'
+      run: yarn typecheck
+    test:
+      glob: '*.{ts,tsx}'
+      run: yarn test
+    format-js:
+      glob: '*.{js,mjs,ts,tsx}'
+      run: npx prettier --write {staged_files} && git add {staged_files}
+    format-cpp:
+      glob: '*.{h,hpp,c,cpp,mm}'
+      # clang-format is a Homebrew/apt install, not an npm one; skip with a note
+      # rather than block the commit when it is missing.
+      run: >
+        if command -v clang-format >/dev/null 2>&1; then
+          clang-format -i {staged_files} && git add {staged_files};
+        else
+          echo "clang-format not installed; skipping C++ formatting";
+        fi
+    format-other:
+      glob: '*.{json,yml,yaml,md,css}'
+      run: npx prettier --write {staged_files} && git add {staged_files}
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}
