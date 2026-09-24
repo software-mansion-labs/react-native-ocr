@@ -3,6 +3,10 @@
  * function captured in a worklet closure is callable from
  * react-native-executorch's background worklet runtime, and that OpenCV is
  * linked (`rotate` runs `cv::rotate`).
+ *
+ * Every button rotates the *current* image by its angle, so clicks accumulate;
+ * "Reset" returns to the source pattern. The red square in the source's
+ * top-left corner makes the accumulated rotation visible and checkable.
  */
 import { AlphaType, Canvas, ColorType, Image as SkiaImage, Skia } from '@shopify/react-native-skia';
 import { useEffect, useMemo, useState } from 'react';
@@ -16,8 +20,12 @@ const WIDTH = 96;
 const HEIGHT = 64;
 const CHANNELS = 4;
 
+type Frame = { width: number; height: number; data: Uint8Array };
+type Where = 'worklet' | 'js';
+type TotalDegrees = 0 | 90 | 180 | 270;
+
 /** An RGBA gradient with a solid red square in the top-left corner. */
-function makePattern(): Uint8Array {
+function makeSource(): Frame {
   const data = new Uint8Array(WIDTH * HEIGHT * CHANNELS);
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
@@ -29,28 +37,31 @@ function makePattern(): Uint8Array {
       data[i + 3] = 255;
     }
   }
-  return data;
+  return { width: WIDTH, height: HEIGHT, data };
 }
 
-type Frame = { width: number; height: number; data: Uint8Array };
-
 /**
- * Builds a tensor from the pattern, rotates it natively and reads the result
+ * Builds a tensor from the frame, rotates it natively and reads the result
  * back. Runs wherever it is called: inline on the JS thread, or on
  * react-native-executorch's worklet runtime through `wrapAsync`.
  */
-function rotatePattern(src: Uint8Array, degrees: RotationDegrees): Frame {
+function rotateFrame(
+  data: Uint8Array,
+  height: number,
+  width: number,
+  degrees: RotationDegrees
+): Frame {
   'worklet';
-  const input = tensor('uint8', [HEIGHT, WIDTH, CHANNELS], src);
+  const input = tensor('uint8', [height, width, CHANNELS], data);
   try {
     const output = rotateTensor(input, degrees);
     try {
-      const height = output.shape[0]!;
-      const width = output.shape[1]!;
+      const outHeight = output.shape[0]!;
+      const outWidth = output.shape[1]!;
       return {
-        width,
-        height,
-        data: output.getData(new Uint8Array(height * width * CHANNELS)),
+        width: outWidth,
+        height: outHeight,
+        data: output.getData(new Uint8Array(outHeight * outWidth * CHANNELS)),
       };
     } finally {
       output.dispose();
@@ -60,7 +71,37 @@ function rotatePattern(src: Uint8Array, degrees: RotationDegrees): Frame {
   }
 }
 
-const rotatePatternOnWorklet = wrapAsync(rotatePattern);
+const rotateFrameOnWorklet = wrapAsync(rotateFrame);
+
+function rotateWhere(frame: Frame, degrees: RotationDegrees, where: Where): Promise<Frame> | Frame {
+  return where === 'worklet'
+    ? rotateFrameOnWorklet(frame.data, frame.height, frame.width, degrees)
+    : rotateFrame(frame.data, frame.height, frame.width, degrees);
+}
+
+/**
+ * Checks the frame against the accumulated clockwise rotation of the source:
+ * the axes must match, and the red corner square must sit in the top-left
+ * (0), top-right (90), bottom-right (180) or bottom-left (270) corner.
+ */
+function check(frame: Frame, total: TotalDegrees): { shapeOk: boolean; cornerOk: boolean } {
+  const swap = total === 90 || total === 270;
+  const shapeOk =
+    frame.width === (swap ? HEIGHT : WIDTH) && frame.height === (swap ? WIDTH : HEIGHT);
+
+  const { width, height, data } = frame;
+  const at = (x: number, y: number) => (y * width + x) * CHANNELS;
+  const isRed = (i: number) => data[i] === 220 && data[i + 1] === 30 && data[i + 2] === 30;
+  const corners: Record<TotalDegrees, number> = {
+    0: at(0, 0),
+    90: at(width - 1, 0),
+    180: at(width - 1, height - 1),
+    270: at(0, height - 1),
+  };
+  const others = ([0, 90, 180, 270] as TotalDegrees[]).filter((k) => k !== total);
+  const cornerOk = isRed(corners[total]) && others.every((k) => !isRed(corners[k]));
+  return { shapeOk, cornerOk };
+}
 
 function toSkiaImage(frame: Frame) {
   const data = Skia.Data.fromBytes(frame.data);
@@ -74,24 +115,6 @@ function toSkiaImage(frame: Frame) {
     data,
     frame.width * CHANNELS
   );
-}
-
-/**
- * Checks where the red corner square landed. For a clockwise rotation the
- * top-left square moves to the top-right (90), bottom-right (180) or
- * bottom-left (270) corner.
- */
-function checkCorner(frame: Frame, degrees: RotationDegrees): boolean {
-  const { width, height, data } = frame;
-  const at = (x: number, y: number) => (y * width + x) * CHANNELS;
-  const isRed = (i: number) => data[i] === 220 && data[i + 1] === 30 && data[i + 2] === 30;
-  const expected =
-    degrees === 90
-      ? at(width - 1, 0)
-      : degrees === 180
-        ? at(width - 1, height - 1)
-        : at(0, height - 1);
-  return isRed(expected) && !isRed(at(0, 0));
 }
 
 function FramePreview({ label, frame }: { label: string; frame: Frame }) {
@@ -118,33 +141,80 @@ function FramePreview({ label, frame }: { label: string; frame: Frame }) {
   );
 }
 
+/**
+ * Rotates the source through both call paths, chains two rotations, and logs
+ * a PASS/FAIL line per step so a device log alone proves the call path works.
+ * Touches no screen state.
+ */
+async function selfTest(source: Frame): Promise<string> {
+  const steps: { where: Where; degrees: RotationDegrees }[] = [
+    { where: 'worklet', degrees: 90 },
+    { where: 'worklet', degrees: 180 },
+    { where: 'worklet', degrees: 270 },
+    { where: 'js', degrees: 90 },
+  ];
+  let passed = 0;
+  for (const { where, degrees } of steps) {
+    try {
+      const started = Date.now();
+      const frame = await rotateWhere(source, degrees, where);
+      const { shapeOk, cornerOk } = check(frame, degrees);
+      const ok = shapeOk && cornerOk;
+      passed += ok ? 1 : 0;
+      console.log(
+        `[rnocr-spike] ${Platform.OS} ${ok ? 'PASS' : 'FAIL'} ${degrees} deg on ${where}: ${frame.width}x${frame.height} shape=${shapeOk} corner=${cornerOk} in ${Date.now() - started} ms`
+      );
+    } catch (e) {
+      console.log(`[rnocr-spike] ${Platform.OS} FAILED ${degrees} deg on ${where}: ${String(e)}`);
+    }
+  }
+  // Accumulation: 90 on the worklet runtime followed by 90 on the JS thread
+  // must equal a single 180.
+  try {
+    const first = await rotateWhere(source, 90, 'worklet');
+    const chained = rotateFrame(first.data, first.height, first.width, 90);
+    const { shapeOk, cornerOk } = check(chained, 180);
+    const ok = shapeOk && cornerOk;
+    passed += ok ? 1 : 0;
+    console.log(
+      `[rnocr-spike] ${Platform.OS} ${ok ? 'PASS' : 'FAIL'} 90 worklet + 90 js = 180: ${chained.width}x${chained.height} shape=${shapeOk} corner=${cornerOk}`
+    );
+  } catch (e) {
+    console.log(`[rnocr-spike] ${Platform.OS} FAILED chained rotation: ${String(e)}`);
+  }
+  const summary = `self-test: ${passed}/${steps.length + 1} passed`;
+  console.log(`[rnocr-spike] ${Platform.OS} ${summary}`);
+  return summary;
+}
+
 export default function NativeSpikeScreen() {
-  const source = useMemo<Frame>(() => ({ width: WIDTH, height: HEIGHT, data: makePattern() }), []);
-  const [result, setResult] = useState<{ label: string; frame: Frame } | null>(null);
+  const source = useMemo(makeSource, []);
+  const [current, setCurrent] = useState<Frame>(source);
+  const [total, setTotal] = useState<TotalDegrees>(0);
   const [status, setStatus] = useState<string>('idle');
   const [busy, setBusy] = useState(false);
 
-  const run = async (where: 'worklet' | 'js', degrees: RotationDegrees) => {
+  useEffect(() => {
+    console.log(`[rnocr-spike] ${Platform.OS} isEmulator=${isEmulator()}`);
+    selfTest(source).then(setStatus);
+  }, [source]);
+
+  const rotateBy = async (where: Where, degrees: RotationDegrees) => {
     setBusy(true);
-    setStatus('running...');
     const started = Date.now();
     try {
-      const frame =
-        where === 'worklet'
-          ? await rotatePatternOnWorklet(source.data, degrees)
-          : rotatePattern(source.data, degrees);
-      const swap = degrees !== 180;
-      const shapeOk =
-        frame.width === (swap ? HEIGHT : WIDTH) && frame.height === (swap ? WIDTH : HEIGHT);
-      const cornerOk = checkCorner(frame, degrees);
+      const frame = await rotateWhere(current, degrees, where);
+      const next = ((total + degrees) % 360) as TotalDegrees;
+      const { shapeOk, cornerOk } = check(frame, next);
       const verdict = shapeOk && cornerOk ? 'PASS' : 'FAIL';
-      const message = `${verdict} ${degrees} deg on ${where}: ${frame.width}x${frame.height} shape=${shapeOk} corner=${cornerOk} in ${Date.now() - started} ms`;
+      const message = `${verdict} +${degrees}° on ${where} → ${next}° total in ${Date.now() - started} ms`;
       console.log(`[rnocr-spike] ${Platform.OS} ${message}`);
-      setResult({ label: `${degrees} deg on ${where}`, frame });
+      setCurrent(frame);
+      setTotal(next);
       setStatus(message);
     } catch (e) {
       const err = e as { name?: string; code?: string; message?: string };
-      const message = `FAILED ${degrees} deg on ${where}: ${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`;
+      const message = `FAILED +${degrees}° on ${where}: ${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`;
       console.log(`[rnocr-spike] ${Platform.OS} ${message}`);
       setStatus(message);
     } finally {
@@ -152,18 +222,11 @@ export default function NativeSpikeScreen() {
     }
   };
 
-  // Self-run once on mount so a device log alone proves the call path works.
-  useEffect(() => {
-    console.log(`[rnocr-spike] ${Platform.OS} isEmulator=${isEmulator()}`);
-    (async () => {
-      await run('worklet', 90);
-      await run('worklet', 180);
-      await run('worklet', 270);
-      await run('js', 90);
-      console.log(`[rnocr-spike] ${Platform.OS} done`);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const reset = () => {
+    setCurrent(source);
+    setTotal(0);
+    setStatus('reset to source');
+  };
 
   return (
     <ScrollView
@@ -174,25 +237,29 @@ export default function NativeSpikeScreen() {
       <Text style={commonStyles.description}>
         platform: {Platform.OS} · isEmulator: {String(isEmulator())}
       </Text>
+      <Text style={commonStyles.description}>
+        Each button rotates the current image by its angle. The "worklet" buttons run on
+        react-native-executorch's background runtime; the "JS thread" button runs inline.
+      </Text>
 
-      <FramePreview label="source" frame={source} />
+      <FramePreview label={`current · ${total}° total`} frame={current} />
 
       <View style={commonStyles.buttonRow}>
-        <Button title="90° worklet" onPress={() => run('worklet', 90)} disabled={busy} />
-        <Button title="180° worklet" onPress={() => run('worklet', 180)} disabled={busy} />
-        <Button title="270° worklet" onPress={() => run('worklet', 270)} disabled={busy} />
+        <Button title="+90° worklet" onPress={() => rotateBy('worklet', 90)} disabled={busy} />
+        <Button title="+180° worklet" onPress={() => rotateBy('worklet', 180)} disabled={busy} />
+        <Button title="+270° worklet" onPress={() => rotateBy('worklet', 270)} disabled={busy} />
       </View>
       <View style={commonStyles.buttonRow}>
         <Button
-          title="90° JS thread"
+          title="+90° JS thread"
           variant="secondary"
-          onPress={() => run('js', 90)}
+          onPress={() => rotateBy('js', 90)}
           disabled={busy}
         />
+        <Button title="Reset" variant="accent" onPress={reset} disabled={busy} />
       </View>
 
       <Text style={styles.status}>{status}</Text>
-      {result && <FramePreview label={result.label} frame={result.frame} />}
     </ScrollView>
   );
 }
