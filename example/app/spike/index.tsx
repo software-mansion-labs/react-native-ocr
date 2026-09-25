@@ -2,7 +2,9 @@
  * Native spike: proves the package's JSI object is installed, that a host
  * function captured in a worklet closure is callable from
  * react-native-executorch's background worklet runtime, and that OpenCV is
- * linked (`rotate` runs `cv::rotate`).
+ * linked (`rotate` runs `cv::rotate`). The self-test also runs every Phase 2
+ * op once on the worklet runtime (`opsSelfTest`), so a device log proves the
+ * whole native surface links and answers.
  *
  * Every button rotates the *current* image by its angle, so clicks accumulate;
  * "Reset" returns to the source pattern. The red square in the source's
@@ -12,7 +14,15 @@ import { AlphaType, Canvas, ColorType, Image as SkiaImage, Skia } from '@shopify
 import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { tensor, wrapAsync } from 'react-native-executorch';
-import { isEmulator, rotateTensor, type RotationDegrees } from '@swmansion/react-native-ocr';
+import {
+  cropTensor,
+  extractCraftTextBoxes,
+  isEmulator,
+  padCornerMean,
+  rotateTensor,
+  warpByGridTensor,
+  type RotationDegrees,
+} from '@swmansion/react-native-ocr';
 import { Button } from '../../components/Button';
 import { commonStyles, theme } from '../../theme';
 
@@ -182,9 +192,123 @@ async function selfTest(source: Frame): Promise<string> {
   } catch (e) {
     console.log(`[rnocr-spike] ${Platform.OS} FAILED chained rotation: ${String(e)}`);
   }
-  const summary = `self-test: ${passed}/${steps.length + 1} passed`;
+  const opsPassed = await opsSelfTest(source);
+  const summary = `self-test: ${passed + opsPassed}/${steps.length + 1 + OPS_CHECKS} passed`;
   console.log(`[rnocr-spike] ${Platform.OS} ${summary}`);
   return summary;
+}
+
+const OPS_CHECKS = 4;
+
+/**
+ * Runs crop, padCornerMean, warpByGrid and extractCraftTextBoxes once each on
+ * the worklet runtime against inputs whose results are known in closed form,
+ * and returns how many of the four matched. Everything native is disposed
+ * inside the worklet.
+ */
+function runOps(data: Uint8Array, height: number, width: number): boolean[] {
+  'worklet';
+  const results: boolean[] = [];
+  const page = tensor('uint8', [height, width, CHANNELS], data);
+  try {
+    // 1. Crop the red corner square: every pixel of the 20x20 result is red.
+    const corner = cropTensor(page, { format: 'xyxy', xmin: 0, ymin: 0, xmax: 20, ymax: 20 });
+    try {
+      const px = corner.getData(new Uint8Array(20 * 20 * CHANNELS));
+      let allRed = corner.shape[0] === 20 && corner.shape[1] === 20;
+      for (let i = 0; i < px.length && allRed; i += CHANNELS) {
+        allRed = px[i] === 220 && px[i + 1] === 30 && px[i + 2] === 30;
+      }
+      results.push(allRed);
+    } finally {
+      corner.dispose();
+    }
+
+    // 2. Pad a uniform strip: the new columns take the corner color.
+    const strip = new Uint8Array(4 * 6 * CHANNELS);
+    for (let i = 0; i < strip.length; i += CHANNELS) {
+      strip[i] = 10;
+      strip[i + 1] = 20;
+      strip[i + 2] = 30;
+      strip[i + 3] = 255;
+    }
+    const padded = padCornerMean(strip, 4, 6, CHANNELS, 9);
+    let padOk = padded.length === 4 * 9 * CHANNELS;
+    for (let y = 0; y < 4 && padOk; y++) {
+      const i = (y * 9 + 8) * CHANNELS;
+      padOk = padded[i] === 10 && padded[i + 1] === 20 && padded[i + 2] === 30;
+    }
+    results.push(padOk);
+
+    // 3. Warp through an identity grid: the page comes back unchanged.
+    const grid = tensor('float32', [2, 2, 2], Float32Array.from([-1, 1, -1, 1, -1, -1, 1, 1]));
+    try {
+      const warped = warpByGridTensor(page, grid, { interpolation: 'nearest' });
+      try {
+        const out = warped.getData(new Uint8Array(height * width * CHANNELS));
+        let same = true;
+        for (let i = 0; i < out.length && same; i++) same = out[i] === data[i];
+        results.push(same);
+      } finally {
+        warped.dispose();
+      }
+    } finally {
+      grid.dispose();
+    }
+
+    // 4. Decode a synthetic CRAFT heatmap with one 8x8 text blob: one box that
+    // covers it, in doubled (detector input) coordinates.
+    const heat = new Float32Array(32 * 32 * 2);
+    for (let y = 8; y <= 15; y++) for (let x = 8; x <= 15; x++) heat[(y * 32 + x) * 2] = 1;
+    const heatmap = tensor('float32', [1, 32, 32, 2], heat);
+    try {
+      const boxes = extractCraftTextBoxes(heatmap, {
+        textThreshold: 0.4,
+        linkThreshold: 0.4,
+        lowTextThreshold: 0.7,
+        minArea: 10,
+        charLevel: false,
+        scale: 2,
+      });
+      const box = boxes[0];
+      results.push(
+        boxes.length === 1 &&
+          box !== undefined &&
+          box.x0 <= 16 &&
+          box.y0 <= 16 &&
+          box.x1 >= 30 &&
+          box.y1 >= 30 &&
+          box.x1 <= 64
+      );
+    } finally {
+      heatmap.dispose();
+    }
+  } finally {
+    page.dispose();
+  }
+  return results;
+}
+
+const runOpsOnWorklet = wrapAsync(runOps);
+
+async function opsSelfTest(source: Frame): Promise<number> {
+  const names = ['crop', 'padCornerMean', 'warpByGrid', 'extractCraftTextBoxes'];
+  try {
+    const started = Date.now();
+    const results = await runOpsOnWorklet(source.data, source.height, source.width);
+    const elapsed = Date.now() - started;
+    results.forEach((ok, i) => {
+      console.log(`[rnocr-spike] ${Platform.OS} ${ok ? 'PASS' : 'FAIL'} ${names[i]} on worklet`);
+    });
+    console.log(`[rnocr-spike] ${Platform.OS} phase 2 ops ran in ${elapsed} ms`);
+    return results.filter(Boolean).length;
+  } catch (e) {
+    const err = e as { name?: string; code?: string; message?: string };
+    console.log(
+      `[rnocr-spike] ${Platform.OS} FAILED phase 2 ops: ${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`
+    );
+    return 0;
+  }
 }
 
 export default function NativeSpikeScreen() {
