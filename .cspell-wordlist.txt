@@ -53,3 +53,17 @@ commitlint
 lefthook
 cspell
 workletizes
+bilinearly
+gtest
+googletest
+ctest
+cmake
+remap
+dilation
+dilated
+affinity
+deinterleave
+xcodebuild
+kmpc
+cxcywh
+binarize

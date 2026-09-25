@@ -8,3 +8,6 @@ example/android
 cpp
 android/build
 CHANGELOG.md
+
+# CMake host test build tree
+cpp/tests/build/

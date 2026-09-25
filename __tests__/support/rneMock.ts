@@ -2,7 +2,10 @@
  * Mock of `react-native-executorch`: the subset of its public API that `src/`
  * uses, backed by {@link FakeTensor}. Grows with the package.
  */
+import * as cv from './cvMock';
 import { FakeTensor, type DType } from './fakeTensor';
+
+export { cv };
 
 export type Tensor = FakeTensor;
 export type { DType };

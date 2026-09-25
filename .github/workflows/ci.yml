@@ -54,3 +54,22 @@ jobs:
 
       - name: Build package
         run: yarn prepare
+
+  native-tests:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The host suites compile only cpp/ops/*.cpp against the machine's
+      # OpenCV, so neither Node nor the JS dependencies are needed here.
+      - name: Install OpenCV, GoogleTest and clang-format
+        run: brew install opencv googletest clang-format
+
+      - name: Check C++ formatting
+        run: |
+          clang-format --dry-run --Werror \
+            $(git ls-files 'cpp/*.h' 'cpp/*.cpp' 'cpp/**/*.h' 'cpp/**/*.cpp' 'ios/*.h' 'ios/*.mm' 'android/*.cpp')
+
+      - name: Build and run the C++ tests
+        run: scripts/run-native-tests.sh

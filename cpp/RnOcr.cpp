@@ -1,7 +1,7 @@
 #include "RnOcr.h"
 
 #include "core/utils.h"
-#include "ops/image_ops.h"
+#include "ops/bindings.h"
 
 namespace jsi = facebook::jsi;
 
@@ -10,7 +10,7 @@ void install(jsi::Runtime &jsiRuntime) {
     jsi::Object module = jsi::Object(jsiRuntime);
 
     core::utils::install_isEmulator(jsiRuntime, module);
-    ops::image::install_rotate(jsiRuntime, module);
+    ops::installOps(jsiRuntime, module);
 
     jsiRuntime.global().setProperty(jsiRuntime, "__rnocr_jsi__", std::move(module));
 }
