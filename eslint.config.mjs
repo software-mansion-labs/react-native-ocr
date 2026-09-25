@@ -103,6 +103,8 @@ export default defineConfig([
       'lib/',
       'docs/',
       'coverage/',
+      // CMake writes *.ts dependency files into the host test build tree.
+      'cpp/tests/build/',
       '.yarn/',
       'example/ios/',
       'example/android/',
