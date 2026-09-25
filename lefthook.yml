@@ -10,22 +10,28 @@ pre-commit:
     test:
       glob: '*.{ts,tsx}'
       run: yarn test
+    # `stage_fixed` re-stages what the formatters changed once every parallel
+    # command has finished; a `git add` inside each command races the others
+    # for .git/index.lock and aborts the commit.
     format-js:
       glob: '*.{js,mjs,ts,tsx}'
-      run: npx prettier --write {staged_files} && git add {staged_files}
+      run: npx prettier --write {staged_files}
+      stage_fixed: true
     format-cpp:
       glob: '*.{h,hpp,c,cpp,mm}'
       # clang-format is a Homebrew/apt install, not an npm one; skip with a note
       # rather than block the commit when it is missing.
       run: >
         if command -v clang-format >/dev/null 2>&1; then
-          clang-format -i {staged_files} && git add {staged_files};
+          clang-format -i {staged_files};
         else
           echo "clang-format not installed; skipping C++ formatting";
         fi
+      stage_fixed: true
     format-other:
       glob: '*.{json,yml,yaml,md,css}'
-      run: npx prettier --write {staged_files} && git add {staged_files}
+      run: npx prettier --write {staged_files}
+      stage_fixed: true
 commit-msg:
   commands:
     commitlint:
