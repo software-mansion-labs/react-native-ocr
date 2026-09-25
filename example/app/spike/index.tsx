@@ -3,8 +3,11 @@
  * function captured in a worklet closure is callable from
  * react-native-executorch's background worklet runtime, and that OpenCV is
  * linked (`rotate` runs `cv::rotate`). The self-test also runs every Phase 2
- * op once on the worklet runtime (`opsSelfTest`), so a device log proves the
- * whole native surface links and answers.
+ * op once on the worklet runtime (`opsSelfTest`), plus the Phase 3 CRAFT
+ * extractor strategy (geometry on top of react-native-executorch's `cv`
+ * helpers), so a device log proves the whole native surface links and answers
+ * and that the pure-TypeScript layer runs on the worklet runtime. It also logs
+ * which variant the model registry resolved `DEFAULT` to.
  *
  * Every button rotates the *current* image by its angle, so clicks accumulate;
  * "Reset" returns to the source pattern. The red square in the source's
@@ -15,9 +18,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { tensor, wrapAsync } from 'react-native-executorch';
 import {
+  craftExtractBoxes,
   cropTensor,
   extractCraftTextBoxes,
   isEmulator,
+  models,
   padCornerMean,
   rotateTensor,
   warpByGridTensor,
@@ -198,13 +203,13 @@ async function selfTest(source: Frame): Promise<string> {
   return summary;
 }
 
-const OPS_CHECKS = 4;
+const OPS_CHECKS = 5;
 
 /**
- * Runs crop, padCornerMean, warpByGrid and extractCraftTextBoxes once each on
- * the worklet runtime against inputs whose results are known in closed form,
- * and returns how many of the four matched. Everything native is disposed
- * inside the worklet.
+ * Runs crop, padCornerMean, warpByGrid, extractCraftTextBoxes and the CRAFT
+ * extractor strategy once each on the worklet runtime against inputs whose
+ * results are known in closed form, and returns how many of the five matched.
+ * Everything native is disposed inside the worklet.
  */
 function runOps(data: Uint8Array, height: number, width: number): boolean[] {
   'worklet';
@@ -283,6 +288,28 @@ function runOps(data: Uint8Array, height: number, width: number): boolean[] {
     } finally {
       heatmap.dispose();
     }
+
+    // 5. Phase 3: the CRAFT extractor strategy turns a 20x8 blob into one line
+    // quad, grouping and de-skewing in TypeScript on top of
+    // react-native-executorch's cv helpers, all on the worklet runtime.
+    const lineHeat = new Float32Array(32 * 32 * 2);
+    for (let y = 8; y <= 15; y++) for (let x = 8; x <= 27; x++) lineHeat[(y * 32 + x) * 2] = 1;
+    const lineHeatmap = tensor('float32', [1, 32, 32, 2], lineHeat);
+    try {
+      const quads = craftExtractBoxes.extract([lineHeatmap], { width: 64, height: 64 }, false);
+      const quad = quads[0];
+      results.push(
+        quads.length === 1 &&
+          quad !== undefined &&
+          quad[0].x <= 16 &&
+          quad[0].y <= 16 &&
+          quad[2].x >= 54 &&
+          quad[2].y >= 30 &&
+          quad[2].x <= 64
+      );
+    } finally {
+      lineHeatmap.dispose();
+    }
   } finally {
     page.dispose();
   }
@@ -292,7 +319,13 @@ function runOps(data: Uint8Array, height: number, width: number): boolean[] {
 const runOpsOnWorklet = wrapAsync(runOps);
 
 async function opsSelfTest(source: Frame): Promise<number> {
-  const names = ['crop', 'padCornerMean', 'warpByGrid', 'extractCraftTextBoxes'];
+  const names = [
+    'crop',
+    'padCornerMean',
+    'warpByGrid',
+    'extractCraftTextBoxes',
+    'craftExtractBoxes (phase 3)',
+  ];
   try {
     const started = Date.now();
     const results = await runOpsOnWorklet(source.data, source.height, source.width);
@@ -300,7 +333,7 @@ async function opsSelfTest(source: Frame): Promise<number> {
     results.forEach((ok, i) => {
       console.log(`[rnocr-spike] ${Platform.OS} ${ok ? 'PASS' : 'FAIL'} ${names[i]} on worklet`);
     });
-    console.log(`[rnocr-spike] ${Platform.OS} phase 2 ops ran in ${elapsed} ms`);
+    console.log(`[rnocr-spike] ${Platform.OS} phase 2 + 3 ops ran in ${elapsed} ms`);
     return results.filter(Boolean).length;
   } catch (e) {
     const err = e as { name?: string; code?: string; message?: string };
@@ -319,7 +352,13 @@ export default function NativeSpikeScreen() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    console.log(`[rnocr-spike] ${Platform.OS} isEmulator=${isEmulator()}`);
+    const english = models.ocr.EASYOCR.ENGLISH;
+    const variant = (['XNNPACK', 'COREML', 'VULKAN'] as const).find(
+      (key) => english[key] === english.DEFAULT
+    );
+    console.log(
+      `[rnocr-spike] ${Platform.OS} isEmulator=${isEmulator()} registry DEFAULT=${variant ?? 'unknown'} ${english.DEFAULT.modelPath}`
+    );
     selfTest(source).then(setStatus);
   }, [source]);
 
