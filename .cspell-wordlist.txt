@@ -87,3 +87,5 @@ paddlehelpers
 charsets
 upscales
 bgra
+lanczos
+letterboxing

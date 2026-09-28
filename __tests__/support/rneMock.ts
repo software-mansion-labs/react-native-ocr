@@ -70,6 +70,88 @@ export function tensor(
   return t;
 }
 
+export type ModelInput = Tensor | number | boolean | null;
+export type ModelOutput = Tensor | number | boolean | string | null;
+
+/** What one exported method does when executed: it fills `outputs` in place. */
+export type FakeMethod = (inputs: ModelInput[], outputs: Tensor[]) => void;
+
+export type FakeModelDefinition = {
+  readonly schema: schema.ModelSpec<schema.ConcreteDim>;
+  readonly methods: Record<string, FakeMethod>;
+};
+
+const modelDefinitions = new Map<string, FakeModelDefinition>();
+const liveModels = new Set<FakeModel>();
+
+export class FakeModel {
+  readonly schema: schema.ModelSpec<schema.ConcreteDim>;
+  readonly backends: Record<string, readonly string[]> = {};
+  disposed = false;
+
+  constructor(
+    readonly path: string,
+    private readonly definition: FakeModelDefinition
+  ) {
+    this.schema = definition.schema;
+    liveModels.add(this);
+  }
+
+  execute(methodName: string, inputs: ModelInput[], outputTensors: Tensor[]): ModelOutput[] {
+    if (this.disposed) {
+      throw RnExecuTorchError('RESOURCE_DISPOSED', `execute: model '${this.path}' was disposed`);
+    }
+    const run = this.definition.methods[methodName];
+    if (!run) {
+      throw RnExecuTorchError('INVALID_ARGUMENT', `execute: no method '${methodName}'`);
+    }
+    for (const t of [...inputs, ...outputTensors]) {
+      if (t instanceof FakeTensor && t.disposed) {
+        throw RnExecuTorchError('RESOURCE_DISPOSED', `execute: tensor ${t.id} was disposed`);
+      }
+    }
+    run(inputs, outputTensors);
+    return outputTensors;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    liveModels.delete(this);
+  }
+}
+
+export type Model = FakeModel;
+
+/**
+ * Registers what `loadModel(path)` returns: the exported schema and the
+ * behavior of each method. Loading an unregistered path fails like a missing
+ * file does.
+ */
+export function setFakeModel(path: string, definition: FakeModelDefinition): void {
+  modelDefinitions.set(path, definition);
+}
+
+export function loadModel(modelPath: string): Model {
+  const definition = modelDefinitions.get(modelPath);
+  if (!definition) {
+    throw RnExecuTorchError('LOAD_FAILED', `loadModel: no fake model registered at '${modelPath}'`);
+  }
+  return new FakeModel(modelPath, definition);
+}
+
+export const modelTracker = {
+  liveCount(): number {
+    return liveModels.size;
+  },
+  livePaths(): string[] {
+    return [...liveModels].map((m) => m.path);
+  },
+  reset(): void {
+    liveModels.clear();
+    modelDefinitions.clear();
+  },
+};
+
 export const defaultWorkletRuntime = { name: 'FakeExecuTorchRuntime' };
 
 export function wrapAsync<Args extends any[], R>(fn: (...args: Args) => R) {
