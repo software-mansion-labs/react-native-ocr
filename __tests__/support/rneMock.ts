@@ -1,17 +1,11 @@
 /**
  * Mock of `react-native-executorch`: the subset of its public API that `src/`
  * uses, backed by {@link FakeTensor}. Grows with the package.
- *
- * The `cv` and `math` namespaces are the sibling mocks (also mapped to the
- * `react-native-executorch/cv` and `/math` subpaths); `schema` is the real
- * module, which is plain TypeScript with no native dependency.
  */
-import * as schema from 'react-native-executorch/schema';
 import * as cv from './cvMock';
 import { FakeTensor, type DType } from './fakeTensor';
-import * as math from './mathMock';
 
-export { cv, math, schema };
+export { cv };
 
 export type Tensor = FakeTensor;
 export type { DType };
@@ -89,23 +83,4 @@ export function createResourceScope() {
       for (const resource of allocated.splice(0).reverse()) resource.dispose();
     },
   };
-}
-
-export const IMAGENET_NORM = {
-  alpha: [1 / (255.0 * 0.229), 1 / (255.0 * 0.224), 1 / (255.0 * 0.225)],
-  beta: [-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
-} as const;
-
-let registeredBackends: readonly string[] = [];
-
-/**
- * Sets what `getRegisteredBackends` reports. Modules that resolve a `DEFAULT`
- * read it once at import, so pair this with `jest.isolateModules`.
- */
-export function setFakeRegisteredBackends(names: readonly string[]): void {
-  registeredBackends = names;
-}
-
-export function getRegisteredBackends(): readonly string[] {
-  return registeredBackends;
 }
