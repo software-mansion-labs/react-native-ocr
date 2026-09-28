@@ -1,9 +1,8 @@
 /**
  * Advanced on-device OCR for React Native, built on react-native-executorch.
  *
- * Phases 1 to 3 of the build-out ship the native module with its typed
- * wrappers, the model registry, the detector strategies and the pipeline's
- * public types; `createOcr` and `useOcr` follow in later phases.
+ * `createOcr` and `useOcr` run whole-page OCR with the models in `models.ocr`;
+ * layout grouping and the document helpers follow in later phases.
  * @packageDocumentation
  */
 
@@ -37,6 +36,9 @@ export {
 } from './ocr/detectors';
 
 export { greedyCtcDecode } from './ocr/ctc';
+
+export { createOcr, type Ocr } from './ocr/createOcr';
+export { useOcr } from './hooks/useOcr';
 
 export type {
   DocumentBlock,
