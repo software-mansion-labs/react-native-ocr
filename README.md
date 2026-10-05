@@ -11,6 +11,9 @@ Advanced on-device OCR for React Native, built on top of
 - Whole-page text detection and recognition with PaddleOCR PP-OCRv6 through `useOcr` and
   `createOcr`: oriented quads with text and confidence, in reading order, with the same
   results as react-native-executorch's `useOpticalCharacterRecognizer` on the same model.
+- EasyOCR (CRAFT + CRNN) in eight alphabets, verified on device for English, and vertical text
+  (`vertical: true` per run): upright glyph stacks are clustered or re-detected glyph by glyph
+  and read top to bottom.
 - A model registry (`models`) with XNNPACK, Core ML and Vulkan exports and a per-platform
   `DEFAULT`.
 - Pluggable detector strategies (`craftExtractBoxes`, `dbnetExtractBoxes`, or your own
@@ -23,9 +26,6 @@ Advanced on-device OCR for React Native, built on top of
 
 ## Planned
 
-- EasyOCR (CRAFT + CRNN, eight alphabets) verified on device, and vertical text (glyph-stack
-  clustering, per-glyph recognition). The code and the registry entries are in place; device
-  verification is the next phase.
 - Document layout with PP-DocLayoutV3 and per-region OCR (`layout` on the model config).
 - Document helpers: page orientation, UVDoc dewarping and SLANet table structure
   (`documentModels` on the model config).
@@ -61,13 +61,32 @@ A result carries `detections` (flat, in reading order), `blocks` (one `'ungroupe
 layout lands), `regions` (empty until layout lands) and `image`, the frame the coordinates refer
 to.
 
+### Vertical text
+
+```tsx
+const { detections } = await runOcr!(image, { vertical: true });
+```
+
+With EasyOCR (CRAFT), a tall box the detector merged from stacked letters is re-detected at glyph
+level and each glyph is read on its own; spaced glyphs are clustered into a stack first. Reads
+below `verticalMinConfidence` (default 0.4) are dropped. Two limits worth knowing: an isolated
+glyph gives the recognizer no context, so `O` and `0` or `l` and `I` can swap, and letters that
+touch are only approximately separated. With PaddleOCR (DBNet, no glyph-level mode) stacks are
+read as clustered glyphs only.
+
+### Known limits of the int8 EasyOCR exports
+
+The EasyOCR XNNPACK and Core ML exports are int8. On the example's printed page the English model
+read about 90% of the characters right, with substitutions such as `m`/`n` or `!`/`l`, where the
+fp32 PP-OCRv6 export read every line exactly; prefer PP-OCRv6 for Latin text.
+
 ### Known issue: the Vulkan export crashes at load
 
-`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` resolves to the Vulkan export on Android, and loading
-it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
+`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` (and `models.ocr.EASYOCR.*.DEFAULT`) resolves to the
+Vulkan export on Android, and loading it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
 ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The fix is being
 made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
-no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android.
+no change for it. Until then, use the `XNNPACK` entries on Android.
 
 ## Requirements
 
@@ -87,10 +106,13 @@ no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on A
 
 ## Example app
 
-`example/` is an Expo app with three screens: **PaddleOCR parity** reads a bundled page with
+`example/` is an Expo app with four screens: **PaddleOCR parity** reads a bundled page with
 this package and with react-native-executorch's own pipeline on the same export and compares
-the results line by line; **Vulkan diagnostics** (Android) loads Vulkan exports one at a time to
-attribute a crash; **Native spike** self-tests the native module.
+the results line by line; **EasyOCR + vertical text** reads the same page or a vertical-text page
+with EasyOCR English and grades the result against the text the page was rendered with (it can
+also save the raw CRAFT heatmap as a fixture for the native parity test); **Vulkan diagnostics**
+(Android) loads Vulkan exports one at a time to attribute a crash; **Native spike** self-tests the
+native module.
 
 ## Development
 
