@@ -4,18 +4,70 @@ Advanced on-device OCR for React Native, built on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch).
 
 > **Status: pre-release.** The package is being built up phase by phase; see
-> `plan.md` for the roadmap. Nothing here is published to npm yet.
+> `plan.md` for the roadmap and the current state. Nothing here is published to npm yet.
 
-## What it will provide
+## What works today
 
-- EasyOCR (CRAFT + CRNN, eight alphabets) and PaddleOCR PP-OCRv6 text detection and recognition
-  as one fused ExecuTorch program per model.
-- Vertical text: glyph-stack clustering and per-glyph recognition.
-- Document layout with PP-DocLayoutV3 and per-region OCR.
-- Document helpers: page orientation, UVDoc dewarping and SLANet table structure.
+- Whole-page text detection and recognition with PaddleOCR PP-OCRv6 through `useOcr` and
+  `createOcr`: oriented quads with text and confidence, in reading order, with the same
+  results as react-native-executorch's `useOpticalCharacterRecognizer` on the same model.
+- A model registry (`models`) with XNNPACK, Core ML and Vulkan exports and a per-platform
+  `DEFAULT`.
+- Pluggable detector strategies (`craftExtractBoxes`, `dbnetExtractBoxes`, or your own
+  `TextBoxExtractor`), per-model recognizer options (charset, normalization, padding, a custom
+  CTC decode) and per-run options.
 - A small native module (C++ with OpenCV, JSI) for the kernels the pipeline needs and
-  react-native-executorch does not expose. Everything else runs on react-native-executorch's
+  react-native-executorch does not expose: `rotateTensor`, `cropTensor`, `warpByGridTensor`,
+  `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
   public API.
+
+## Planned
+
+- EasyOCR (CRAFT + CRNN, eight alphabets) verified on device, and vertical text (glyph-stack
+  clustering, per-glyph recognition). The code and the registry entries are in place; device
+  verification is the next phase.
+- Document layout with PP-DocLayoutV3 and per-region OCR (`layout` on the model config).
+- Document helpers: page orientation, UVDoc dewarping and SLANet table structure
+  (`documentModels` on the model config).
+
+`createOcr` rejects a config that sets `layout` or `documentModels` until those land.
+
+## Usage
+
+```tsx
+import { models, useOcr } from '@swmansion/react-native-ocr';
+
+function Screen() {
+  const { isReady, downloadProgress, error, runOcr } = useOcr(
+    models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT
+  );
+
+  const read = async (image: ImageBuffer) => {
+    const { detections } = await runOcr!(image);
+    for (const { text, confidence, quad } of detections) {
+      console.log(text, confidence, quad);
+    }
+  };
+  // ...
+}
+```
+
+`ImageBuffer` is react-native-executorch's raw `uint8` HWC image (`rgb`, `rgba`, `bgr`, `bgra`
+or `gray`). Without React, `createOcr(config, runtime?)` returns `{ runOcr, runOcrWorklet,
+dispose }`; `runOcr` resolves on a worklet runtime, `runOcrWorklet` runs synchronously on the
+calling worklet.
+
+A result carries `detections` (flat, in reading order), `blocks` (one `'ungrouped'` block until
+layout lands), `regions` (empty until layout lands) and `image`, the frame the coordinates refer
+to.
+
+### Known issue: the Vulkan export crashes at load
+
+`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` resolves to the Vulkan export on Android, and loading
+it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
+ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The fix is being
+made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
+no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android.
 
 ## Requirements
 
@@ -33,12 +85,20 @@ Advanced on-device OCR for React Native, built on top of
 
 - iOS 17+, Android API 26+, the New Architecture, `react-native-worklets` 0.10 to 0.12.
 
+## Example app
+
+`example/` is an Expo app with three screens: **PaddleOCR parity** reads a bundled page with
+this package and with react-native-executorch's own pipeline on the same export and compares
+the results line by line; **Vulkan diagnostics** (Android) loads Vulkan exports one at a time to
+attribute a crash; **Native spike** self-tests the native module.
+
 ## Development
 
 ```sh
 yarn install
 yarn example ios       # or: yarn example android
 yarn typecheck && yarn lint && yarn test
+yarn test:native       # GoogleTest suites for the C++ kernels, against the host OpenCV
 ```
 
 See `CONTRIBUTING.md` for the repository layout and the native build.
