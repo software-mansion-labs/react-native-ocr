@@ -4678,7 +4678,7 @@ __metadata:
     react-native: "npm:0.85.3"
     react-native-blob-util: "npm:^0.24.0"
     react-native-builder-bob: "npm:^0.40.18"
-    react-native-executorch: "npm:^0.10.2"
+    react-native-executorch: "npm:^0.10.3"
     react-native-worklets: "npm:0.10.3"
     release-it: "npm:^17.10.0"
     typedoc: "npm:^0.28.13"
@@ -13151,9 +13151,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-executorch@npm:^0.10.2":
-  version: 0.10.2
-  resolution: "react-native-executorch@npm:0.10.2"
+"react-native-executorch@npm:^0.10.3":
+  version: 0.10.3
+  resolution: "react-native-executorch@npm:0.10.3"
   dependencies:
     "@huggingface/jinja": "npm:^0.5.9"
     jsonrepair: "npm:^3.12.0"
@@ -13169,7 +13169,7 @@ __metadata:
   peerDependenciesMeta:
     "@kesha-antonov/react-native-background-downloader":
       optional: true
-  checksum: 10c0/2d1d7f8188a6b051fb4f7e6d1360645a6c42f8219cba719d4eb7331ed3762692baec7d61ae9055a6d34820933079fc854021f1413504552575c480e6e1a63b7a
+  checksum: 10c0/81e1b3af0b5825c6212359f50247e407d8fdaaaaef2e3f6949d71dc91340b2df46295a6f8a100bdef73a02146670f4393891e34cc423ceb232eb756a78cbfd2a
   languageName: node
   linkType: hard
 
@@ -13232,7 +13232,7 @@ __metadata:
     react-native: "npm:0.85.3"
     react-native-blob-util: "npm:^0.24.0"
     react-native-builder-bob: "npm:^0.40.18"
-    react-native-executorch: "npm:^0.10.2"
+    react-native-executorch: "npm:^0.10.3"
     react-native-gesture-handler: "npm:~2.31.1"
     react-native-reanimated: "npm:4.5.3"
     react-native-safe-area-context: "npm:~5.7.0"
