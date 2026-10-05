@@ -12,35 +12,24 @@ import {
   useOpticalCharacterRecognizer,
   type PaddleOcrModel,
 } from 'react-native-executorch';
-import {
-  isEmulator,
-  models,
-  useOcr,
-  type OcrDetection,
-  type Quad,
-} from '@swmansion/react-native-ocr';
+import { models, useOcr, type OcrDetection, type Quad } from '@swmansion/react-native-ocr';
 import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';
 import { commonStyles, theme } from '../../theme';
 import { skImageToBuffer } from '../../utils';
 
-// On Android `DEFAULT` is the Vulkan export, which crashes inside ExecuTorch's
-// Vulkan backend on the emulator's software GPU, so emulators run on the CPU.
 const PPOCRV6 = models.ocr.PADDLE.PPOCRV6_SMALL;
-const OURS = isEmulator() ? PPOCRV6.XNNPACK : PPOCRV6.DEFAULT;
-const BACKEND = (['XNNPACK', 'COREML', 'VULKAN'] as const).find((key) => PPOCRV6[key] === OURS);
 
-// The same export and thresholds on both sides, so any difference comes from
-// the pipelines and not from the model.
-const THEIRS: PaddleOcrModel = {
-  modelPath: OURS.modelPath,
-  charsetPath: rneModels.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT.charsetPath,
-  modelOpts: { defaultConfidenceThreshold: OURS.modelOpts.minConfidence ?? 0 },
-};
+// The screen opens on the CPU export, which runs everywhere. The accelerated
+// export is an explicit choice: on the Android emulator loading the Vulkan one
+// crashes the app inside ExecuTorch's Vulkan backend.
+type Backend = 'XNNPACK' | 'COREML' | 'VULKAN';
+const BACKENDS: Backend[] = ['XNNPACK', Platform.OS === 'ios' ? 'COREML' : 'VULKAN'];
 
 type Line = Pick<OcrDetection, 'text' | 'confidence' | 'quad'>;
 
 type Comparison = {
+  readonly backend: Backend;
   readonly ours: Line[];
   readonly theirs: Line[];
   readonly sameText: number;
@@ -63,7 +52,7 @@ function quadDelta(a: Quad, b: Quad): number {
 function compare(
   ours: Line[],
   theirs: Line[]
-): Omit<Comparison, 'ours' | 'theirs' | 'oursMs' | 'theirsMs'> {
+): Omit<Comparison, 'backend' | 'ours' | 'theirs' | 'oursMs' | 'theirsMs'> {
   const differences: string[] = [];
   let sameText = 0;
   let maxQuadDelta = 0;
@@ -97,8 +86,41 @@ function quadPath(quad: Quad, scale: number) {
 
 export default function OcrParityScreen() {
   const image = useImage(require('../../assets/ocr/sample.png'));
-  const ours = useOcr(OURS);
-  const theirs = useOpticalCharacterRecognizer(THEIRS);
+  const [backend, setBackend] = useState<Backend>('XNNPACK');
+  const model = PPOCRV6[backend];
+  // The same export and thresholds on both sides, so any difference comes from
+  // the pipelines and not from the model.
+  const rneModel = useMemo<PaddleOcrModel>(
+    () => ({
+      modelPath: model.modelPath,
+      charsetPath: rneModels.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT.charsetPath,
+      modelOpts: { defaultConfidenceThreshold: model.modelOpts.minConfidence ?? 0 },
+    }),
+    [model]
+  );
+  const ours = useOcr(model);
+  // One model at a time: react-native-executorch's pipeline loads once this
+  // package's has settled, so a crash while loading names the load it was.
+  const oursSettled = ours.isReady || !!ours.error;
+  const theirs = useOpticalCharacterRecognizer(rneModel, { preventLoad: !oursSettled });
+
+  useEffect(() => {
+    console.log(`[rnocr-parity] ${Platform.OS} ${backend} loading this package's pipeline`);
+  }, [backend]);
+  useEffect(() => {
+    if (oursSettled) {
+      console.log(
+        `[rnocr-parity] ${Platform.OS} ${backend} this package's pipeline ` +
+          `${ours.isReady ? 'loaded' : `failed: ${ours.error?.message}`}; loading RNE's`
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oursSettled]);
+  useEffect(() => {
+    if (theirs.isReady)
+      console.log(`[rnocr-parity] ${Platform.OS} ${backend} RNE's pipeline loaded`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theirs.isReady]);
   const [comparison, setComparison] = useState<Comparison>();
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -121,6 +143,7 @@ export default function OcrParityScreen() {
       const theirsResult = await recognizeCharacters(page);
       const theirsMs = Date.now() - started;
       const result = {
+        backend,
         ours: oursResult.detections,
         theirs: theirsResult,
         oursMs,
@@ -128,7 +151,7 @@ export default function OcrParityScreen() {
         ...compare(oursResult.detections, theirsResult),
       };
       console.log(
-        `[rnocr-parity] ${Platform.OS} ${result.sameText}/${result.theirs.length} lines identical, ` +
+        `[rnocr-parity] ${Platform.OS} ${backend} ${result.sameText}/${result.theirs.length} lines identical, ` +
           `ours ${result.ours.length} lines, max quad delta ${result.maxQuadDelta.toFixed(2)} px`
       );
       setComparison(result);
@@ -140,8 +163,10 @@ export default function OcrParityScreen() {
     }
   };
 
-  // Run once as soon as both pipelines and the page are ready.
+  // Run as soon as both pipelines and the page are ready, again after a
+  // backend change.
   useEffect(() => {
+    setComparison(undefined);
     if (ready) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
@@ -166,6 +191,17 @@ export default function OcrParityScreen() {
       style={commonStyles.container}
       contentContainerStyle={commonStyles.contentContainer}
     >
+      <View style={commonStyles.buttonRow}>
+        {BACKENDS.map((key) => (
+          <Button
+            key={key}
+            title={key}
+            variant={key === backend ? 'primary' : 'secondary'}
+            onPress={() => setBackend(key)}
+            disabled={busy}
+          />
+        ))}
+      </View>
       <ModelStatus
         isReady={ours.isReady && theirs.isReady}
         downloadProgress={Math.min(ours.downloadProgress, theirs.downloadProgress)}
@@ -186,7 +222,8 @@ export default function OcrParityScreen() {
             {comparison.maxConfidenceDelta.toFixed(4)}
           </Text>
           <Text style={styles.verdictLine}>
-            ours {comparison.oursMs} ms · RNE {comparison.theirsMs} ms · {Platform.OS} · {BACKEND}
+            ours {comparison.oursMs} ms · RNE {comparison.theirsMs} ms · {Platform.OS} ·{' '}
+            {comparison.backend}
           </Text>
           {comparison.differences.map((difference) => (
             <Text key={difference} style={styles.difference}>
