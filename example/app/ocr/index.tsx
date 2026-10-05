@@ -77,11 +77,9 @@ function compare(
 }
 
 function quadPath(quad: Quad, scale: number) {
-  const path = Skia.Path.Make();
-  path.moveTo(quad[0].x * scale, quad[0].y * scale);
+  const path = Skia.PathBuilder.Make().moveTo(quad[0].x * scale, quad[0].y * scale);
   for (let i = 1; i < 4; i++) path.lineTo(quad[i]!.x * scale, quad[i]!.y * scale);
-  path.close();
-  return path;
+  return path.close().build();
 }
 
 export default function OcrParityScreen() {
