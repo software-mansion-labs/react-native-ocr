@@ -1,0 +1,16 @@
+{
+  "sample": [
+    "Parity check 2026",
+    "The quick brown fox",
+    "jumps over the lazy dog",
+    "while 12 geese watch",
+    "from the river bank.",
+    "Invoice no. 40713",
+    "Total: 1,284.50 EUR",
+    "Due: 14 October",
+    "Thank you!",
+    "This single line of small type runs across the whole page so that it is far wider than the widest input the recognizer accepts",
+    "Rotated lines keep their angle."
+  ],
+  "vertical": ["Vertical text sample", "HOTEL", "MENU", "EXIT", "Platform 9"]
+}
