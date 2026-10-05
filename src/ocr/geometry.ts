@@ -23,6 +23,12 @@ const HEIGHT_THRESHOLD = 2.0; // max height mismatch to merge (x candidate heigh
 const MIN_SHORT_SIDE = 15; // discard merged lines thinner than this (px)
 const MIN_LONG_SIDE = 30; // discard merged lines shorter than this (px)
 const VERTICAL_THRESHOLD = 20; // |dx| of short-side midpoints below this => vertical
+// A box wider than this multiple of its height is a horizontal word, never a
+// stacked glyph: a vertical line fit does not absorb it (so a heading sitting
+// right above a glyph column stays its own line), and the stack clustering
+// below leaves it out. Narrow tall boxes join horizontal lines freely, since
+// `l` and `I` are ordinary glyphs.
+const STACK_GLYPH_ASPECT = 1.6;
 
 const boxWidth = (b: Box): number => {
   'worklet';
@@ -201,6 +207,9 @@ export function groupBoxes(input: readonly Box[]): Box[] {
       let mergedOne = false;
       for (const candidateEntry of candidates) {
         let candidate = boxes[candidateEntry.index]!;
+        if (isVertical && boxWidth(candidate) > boxHeight(candidate) * STACK_GLYPH_ASPECT) {
+          continue;
+        }
         // Only re-orient a candidate the detector emitted (near-)axis-aligned
         // (angle ~ 0 or 90, within the epsilon below) onto the seed's line; a
         // box with any real skew already carries its own angle and is left as is.
@@ -368,11 +377,9 @@ export function orderByReadingOrder<T extends { readonly quad: Quad }>(items: T[
   return order.map((i) => items[i]!);
 }
 
-// A box wider than this multiple of its height is a horizontal line, never a
-// stacked glyph. A box joins a stack when its x-span overlaps the stack's by
-// STACK_X_OVERLAP of the narrower width and the y-gap is within STACK_Y_GAP of
-// its height.
-const STACK_GLYPH_ASPECT = 1.6;
+// A box joins a stack when its x-span overlaps the stack's by STACK_X_OVERLAP
+// of the narrower width and the y-gap is within STACK_Y_GAP of its height;
+// boxes wider than STACK_GLYPH_ASPECT (above) never do.
 const STACK_X_OVERLAP = 0.25;
 const STACK_Y_GAP = 2.5;
 const STACK_UPWARD_OVERLAP = 0.5; // a box may reach back up this fraction of its height into the stack

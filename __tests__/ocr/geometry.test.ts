@@ -67,6 +67,27 @@ describe('groupBoxes', () => {
     expect(line).toMatchObject({ x0: 0, y0: 0, x1: 20, y1: 100, angle: -90 });
   });
 
+  it('stacks square glyphs under each other into one tall line', () => {
+    // Four 40x50 glyphs, 10 px apart, centred on x = 100 (angle 90: an
+    // upright rectangle as minAreaRect reports it).
+    const glyphs = [0, 1, 2, 3].map((i) => box(80, 100 + i * 60, 120, 150 + i * 60, 90));
+    const lines = groupBoxes(glyphs);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ x0: 80, y0: 100, x1: 120, y1: 330, angle: -90 });
+  });
+
+  it('does not pull a wide word above a glyph column into the stack', () => {
+    // Glyphs (50x70) larger than the heading word (60x30) above them, all
+    // centred on x = 75: the column seeds first and its vertical line fit
+    // would otherwise absorb the word, which sits within the gap threshold.
+    const word = box(45, 0, 105, 30, 90);
+    const glyphs = [0, 1, 2, 3].map((i) => box(50, 60 + i * 80, 100, 130 + i * 80, 90));
+    const lines = groupBoxes([word, ...glyphs]).sort(byTop);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ x0: 45, y0: 0, x1: 105, y1: 30 });
+    expect(lines[1]).toMatchObject({ x0: 50, y0: 60, x1: 100, y1: 370 });
+  });
+
   it('does not mutate its input', () => {
     const input = [box(0, 0, 60, 20, 12)];
     const snapshot = JSON.stringify(input);
