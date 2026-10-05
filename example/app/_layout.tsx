@@ -11,6 +11,7 @@ export default function Layout() {
     >
       <Stack.Screen name="index" options={{ title: 'react-native-ocr' }} />
       <Stack.Screen name="ocr/index" options={{ title: 'PaddleOCR parity' }} />
+      <Stack.Screen name="vulkan/index" options={{ title: 'Vulkan diagnostics' }} />
       <Stack.Screen name="spike/index" options={{ title: 'Native spike' }} />
     </Stack>
   );

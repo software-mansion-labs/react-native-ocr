@@ -89,3 +89,4 @@ upscales
 bgra
 lanczos
 letterboxing
+minilm
