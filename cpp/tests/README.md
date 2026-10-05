@@ -33,6 +33,8 @@ builds (OpenCV 4.x from react-native-executorch) keep using `imgproc`.
 | ----------------------- | -------------------------------------------------------------------- |
 | `ImageOpsTest.cpp`      | `rotate`, `crop`, `warpByGrid`, `padCornerMean`                     |
 | `CraftOpsTest.cpp`      | `extractCraftTextBoxes` on synthetic heatmaps                        |
+| `CraftParityTest.cpp`   | `extractCraftTextBoxes` against the react-native-executorch decoder it was ported from (`support/ReferenceCraft.cpp`, verbatim from commit `3f83e48a1`) on real heatmaps |
+| `fixtures/craft/`       | Real CRAFT outputs of the EasyOCR English model on the example's sample pages (`.heat`: `CRFT`, uint32 version, int32 height, int32 width, float32 `[H, W, 2]`; `.json`: provenance), captured by the example's EasyOCR screen and copied with `scripts/pull-craft-fixtures.sh` |
 | `support/Assertions.h`  | `expectThrowsCode`: asserts a kernel raises a coded `RnOcrException` |
 
 One binary per suite, so `ctest -R ImageOpsTest` targets one and a crash in one area cannot take
