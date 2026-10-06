@@ -1,0 +1,24 @@
+{
+  "image": "example/assets/ocr/vertical.png",
+  "model": "https://huggingface.co/software-mansion/react-native-executorch-easy-ocr/resolve/v0.10.0/english/xnnpack/easy_ocr_english_xnnpack_int8.pte",
+  "backend": "XNNPACK",
+  "platform": "ios",
+  "imageSize": {
+    "width": 600,
+    "height": 800
+  },
+  "detectorSize": {
+    "width": 416,
+    "height": 544
+  },
+  "heatmapSize": {
+    "width": 208,
+    "height": 272
+  },
+  "letterbox": {
+    "interpolation": "area",
+    "padValue": 0,
+    "norm": "IMAGENET_NORM"
+  },
+  "createdAt": "2026-10-05T13:16:17.473Z"
+}

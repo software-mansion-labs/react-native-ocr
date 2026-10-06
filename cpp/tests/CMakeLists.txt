@@ -95,6 +95,13 @@ else()
   message(STATUS "JSI headers: node_modules not found, skipping the bindings compile check")
 endif()
 
+# --- Parity oracle ----------------------------------------------------------
+# The react-native-executorch CRAFT decoder the kernel was ported from, built
+# only for CraftParityTest to compare against on real heatmaps.
+add_library(rnocr_reference_craft STATIC support/ReferenceCraft.cpp)
+target_include_directories(rnocr_reference_craft PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(rnocr_reference_craft PUBLIC rnocr_opencv)
+
 # --- Suites -----------------------------------------------------------------
 enable_testing()
 include(GoogleTest)
@@ -103,13 +110,15 @@ include(GoogleTest)
 # one area cannot take the rest down.
 set(TEST_SUITES
   ImageOpsTest.cpp
-  CraftOpsTest.cpp)
+  CraftOpsTest.cpp
+  CraftParityTest.cpp)
 
 foreach(suite_path IN LISTS TEST_SUITES)
   get_filename_component(suite_name "${suite_path}" NAME_WE)
   add_executable(${suite_name} "${suite_path}" support/Assertions.h)
   target_include_directories(${suite_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-  target_link_libraries(${suite_name} PRIVATE rnocr_kernels GTest::gtest_main)
+  target_link_libraries(${suite_name} PRIVATE rnocr_kernels rnocr_reference_craft GTest::gtest_main)
+  target_compile_definitions(${suite_name} PRIVATE RNOCR_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
   target_compile_options(${suite_name} PRIVATE -Wall -Wextra)
   gtest_discover_tests(${suite_name} DISCOVERY_TIMEOUT 60)
 endforeach()

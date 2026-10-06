@@ -90,3 +90,4 @@ bgra
 lanczos
 letterboxing
 minilm
+CRFT
