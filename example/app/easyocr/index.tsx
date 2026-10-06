@@ -26,7 +26,8 @@ import { saveCraftFixture, saveLastRun } from '../../craftFixture';
 import { commonStyles, theme } from '../../theme';
 import { skImageToBuffer } from '../../utils';
 
-const ENGLISH = models.ocr.EASYOCR.ENGLISH;
+type Language = keyof typeof models.ocr.EASYOCR;
+const LANGUAGES = Object.keys(models.ocr.EASYOCR) as Language[];
 
 // The screen opens on the CPU export, which runs everywhere; the accelerated
 // export is an explicit choice (see the parity screen for why).
@@ -85,6 +86,7 @@ function grade(read: readonly string[], lines: readonly string[]): Grade {
 
 type Outcome = {
   readonly backend: Backend;
+  readonly language: Language;
   readonly sample: SampleKey;
   readonly vertical: boolean;
   readonly detections: OcrDetection[];
@@ -103,27 +105,37 @@ export default function EasyOcrScreen() {
     sample: useImage(require('../../assets/ocr/sample.png')),
     vertical: useImage(require('../../assets/ocr/vertical.png')),
   };
-  // `/easyocr?backend=COREML&sample=vertical&save=1` opens the screen in that
-  // state (and saves the heatmap after the first run), so a run can be
-  // scripted without tapping.
-  const params = useLocalSearchParams<{ backend?: string; sample?: string; save?: string }>();
+  // `/easyocr?lang=KOREAN&backend=COREML&sample=vertical&save=1` opens the
+  // screen in that state (and saves the heatmap after the first run), so a
+  // run can be scripted without tapping.
+  const params = useLocalSearchParams<{
+    lang?: string;
+    backend?: string;
+    sample?: string;
+    save?: string;
+  }>();
   const initialSample = SAMPLES.find((s) => s.key === params.sample) ?? SAMPLES[0]!;
+  const [language, setLanguage] = useState<Language>(
+    LANGUAGES.find((l) => l === params.lang) ?? 'ENGLISH'
+  );
   const [backend, setBackend] = useState<Backend>(
     BACKENDS.find((b) => b === params.backend) ?? 'XNNPACK'
   );
   const [sample, setSample] = useState<SampleKey>(initialSample.key);
   const [vertical, setVertical] = useState(initialSample.vertical);
-  const model = ENGLISH[backend];
+  const model = models.ocr.EASYOCR[language][backend];
   const { isReady, error, downloadProgress, resource, runOcr } = useOcr(model);
   const image = pages[sample];
 
   useEffect(() => {
-    console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} loading`);
-  }, [backend]);
+    console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} ${language} loading`);
+  }, [backend, language]);
   useEffect(() => {
-    if (isReady) console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} loaded`);
-    if (error) console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} failed: ${error.message}`);
-  }, [isReady, error, backend]);
+    if (isReady) console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} ${language} loaded`);
+    if (error) {
+      console.log(`[rnocr-easyocr] ${Platform.OS} ${backend} ${language} failed: ${error.message}`);
+    }
+  }, [isReady, error, backend, language]);
 
   const [outcome, setOutcome] = useState<Outcome>();
   const [failure, setFailure] = useState<string>();
@@ -144,6 +156,7 @@ export default function EasyOcrScreen() {
       const texts = result.detections.map((d) => d.text);
       const next: Outcome = {
         backend,
+        language,
         sample,
         vertical,
         detections: result.detections,
@@ -151,7 +164,7 @@ export default function EasyOcrScreen() {
         ms,
       };
       console.log(
-        `[rnocr-easyocr] ${Platform.OS} ${backend} ${sample} vertical=${vertical} ` +
+        `[rnocr-easyocr] ${Platform.OS} ${backend} ${language} ${sample} vertical=${vertical} ` +
           `${next.grade.found}/${expected[sample].length} expected lines read, ` +
           `${(next.grade.charAccuracy * 100).toFixed(1)}% chars, ` +
           `${texts.length} detections, ${ms} ms: ${JSON.stringify(texts)}`
@@ -214,6 +227,18 @@ export default function EasyOcrScreen() {
       style={commonStyles.container}
       contentContainerStyle={commonStyles.contentContainer}
     >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.languages}>
+        {LANGUAGES.map((key) => (
+          <Button
+            key={key}
+            title={key.toLowerCase()}
+            variant={key === language ? 'primary' : 'secondary'}
+            onPress={() => setLanguage(key)}
+            disabled={busy}
+            style={styles.language}
+          />
+        ))}
+      </ScrollView>
       <View style={commonStyles.buttonRow}>
         {BACKENDS.map((key) => (
           <Button
@@ -247,7 +272,7 @@ export default function EasyOcrScreen() {
         isReady={isReady}
         downloadProgress={downloadProgress}
         error={error?.message}
-        modelTypeLabel="EasyOCR English"
+        modelTypeLabel={`EasyOCR ${language.toLowerCase()}`}
       />
       {failure && <Text style={styles.failure}>{failure}</Text>}
       {outcome && (
@@ -258,7 +283,8 @@ export default function EasyOcrScreen() {
           </Text>
           <Text style={styles.verdictLine}>
             {outcome.detections.length} detections · {outcome.ms} ms · {Platform.OS} ·{' '}
-            {outcome.backend} · {outcome.sample} · vertical {outcome.vertical ? 'on' : 'off'}
+            {outcome.backend} · {outcome.language.toLowerCase()} · {outcome.sample} · vertical{' '}
+            {outcome.vertical ? 'on' : 'off'}
           </Text>
           {outcome.grade.missing.map((line) => (
             <Text key={`m${line}`} style={styles.difference}>
@@ -310,6 +336,8 @@ export default function EasyOcrScreen() {
 }
 
 const styles = StyleSheet.create({
+  languages: { alignSelf: 'stretch', flexGrow: 0, marginBottom: theme.spacing.medium },
+  language: { marginRight: theme.spacing.small },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.small },
   switchLabel: { fontSize: 13, color: theme.colors.textSecondary },
   verdict: {
