@@ -7,13 +7,14 @@
  */
 import { installFakeRnOcr } from './fakeRnOcr';
 import { tensorTracker } from './fakeTensor';
-import { modelTracker } from './rneMock';
+import { modelTracker, setFakeLayoutRegions } from './rneMock';
 
 installFakeRnOcr();
 
 beforeEach(() => {
   tensorTracker.reset();
   modelTracker.reset();
+  setFakeLayoutRegions(null);
 });
 
 // Native memory is not garbage collected, so anything a test allocates through

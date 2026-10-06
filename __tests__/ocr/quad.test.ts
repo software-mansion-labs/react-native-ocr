@@ -1,5 +1,11 @@
 import type { cv } from 'react-native-executorch';
-import { boundingQuadOf, quadFromBounds, splitTallQuad, splitWideQuad } from '../../src/ocr/quad';
+import {
+  boundingQuadOf,
+  quadFromBounds,
+  splitTallQuad,
+  splitWideQuad,
+  translateQuad,
+} from '../../src/ocr/quad';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): cv.Quad => [
   { x: x0, y: y0 },
@@ -13,6 +19,24 @@ describe('quadFromBounds', () => {
     expect(quadFromBounds({ format: 'xyxy', xmin: 1, ymin: 2, xmax: 5, ymax: 7 })).toEqual(
       rect(1, 2, 5, 7)
     );
+  });
+});
+
+describe('translateQuad', () => {
+  it('moves every corner and keeps their order', () => {
+    const tilted: cv.Quad = [
+      { x: 0, y: 1 },
+      { x: 10, y: 0 },
+      { x: 11, y: 5 },
+      { x: 1, y: 6 },
+    ];
+    expect(translateQuad(tilted, 100, -1)).toEqual([
+      { x: 100, y: 0 },
+      { x: 110, y: -1 },
+      { x: 111, y: 4 },
+      { x: 101, y: 5 },
+    ]);
+    expect(translateQuad(tilted, 0, 0)).toEqual(tilted);
   });
 });
 
