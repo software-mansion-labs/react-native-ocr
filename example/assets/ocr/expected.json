@@ -12,5 +12,36 @@
     "This single line of small type runs across the whole page so that it is far wider than the widest input the recognizer accepts",
     "Rotated lines keep their angle."
   ],
-  "vertical": ["Vertical text sample", "HOTEL", "MENU", "EXIT", "Platform 9"]
+  "vertical": ["Vertical text sample", "HOTEL", "MENU", "EXIT", "Platform 9"],
+  "layout": [
+    "On-device Document Reading",
+    "A. Reader and B. Writer, Mobile Lab",
+    "Abstract",
+    "We read printed pages on a phone without any server. A layout model finds",
+    "the regions of the page, each region is read on its own crop and the blocks",
+    "are returned in the order a person would read them, column by column.",
+    "1 Introduction",
+    "Scanned pages mix titles, body",
+    "text, figures and tables. Reading",
+    "them as one block loses the",
+    "structure, so the pipeline first",
+    "detects regions and then reads",
+    "each one with the recognizer.",
+    "Nested duplicates are merged by",
+    "containment before reading.",
+    "2 Method",
+    "The detector returns boxes with",
+    "a class label and a confidence.",
+    "Visual regions such as images",
+    "carry no text and are skipped;",
+    "every other region is cropped",
+    "natively and read in place.",
+    "Figure 1. Throughput by batch size",
+    "3 Results",
+    "Blocks come out in reading order",
+    "on two-column pages, and each",
+    "block keeps the label and the",
+    "confidence the detector gave it.",
+    "Preprint, October 2026"
+  ]
 }

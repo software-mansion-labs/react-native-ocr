@@ -34,7 +34,7 @@ const LANGUAGES = Object.keys(models.ocr.EASYOCR) as Language[];
 type Backend = 'XNNPACK' | 'COREML' | 'VULKAN';
 const BACKENDS: Backend[] = ['XNNPACK', Platform.OS === 'ios' ? 'COREML' : 'VULKAN'];
 
-type SampleKey = keyof typeof expected;
+type SampleKey = 'sample' | 'vertical';
 const SAMPLES: { key: SampleKey; title: string; vertical: boolean }[] = [
   { key: 'sample', title: 'Page', vertical: false },
   { key: 'vertical', title: 'Vertical', vertical: true },
