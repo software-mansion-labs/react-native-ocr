@@ -82,11 +82,13 @@ fp32 PP-OCRv6 export read every line exactly; prefer PP-OCRv6 for Latin text.
 
 ### Known issue: the Vulkan export crashes at load
 
-`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` (and `models.ocr.EASYOCR.*.DEFAULT`) resolves to the
-Vulkan export on Android, and loading it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
+`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` resolves to the Vulkan export on Android, and loading
+it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
 ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The fix is being
 made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
-no change for it. Until then, use the `XNNPACK` entries on Android.
+no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android. The
+EasyOCR Vulkan exports load and run on a Galaxy S23 (they keep the recognizer on XNNPACK), but
+crash the Android emulator; use `XNNPACK` there.
 
 ## Requirements
 
