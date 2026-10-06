@@ -16,7 +16,7 @@ import type { WorkletRuntime } from 'react-native-worklets';
 import { RECOGNIZER_NORM, RECOGNIZER_PAD_VALUE } from '../constants';
 import { cropTensor } from '../native/ops';
 import { resolveOcrContract, runOcrPass, runOcrPassOnTensor, type OcrEngine } from './engine';
-import { orderByReadingOrder } from './geometry';
+import { orderByXyCut } from './geometry';
 import { FORMAT_CHANNELS } from './imageFormat';
 import {
   DEFAULT_TABLE_LABEL,
@@ -161,7 +161,6 @@ export async function createOcr<L = never>(
     // straight into the recognizer: no JS crop and re-upload per region.
     const regions = mergeContainedRegions(layout.detectObjectsWorklet(input), visualLabels);
     const blocks: DocumentBlock<L>[] = [];
-    const detections: OcrDetection[] = [];
     const tPage = tensor('uint8', [input.height, input.width, FORMAT_CHANNELS[input.format]]);
     try {
       tPage.setData(input.data);
@@ -198,20 +197,19 @@ export async function createOcr<L = never>(
         if (lines.length === 0 && !isTable) {
           continue;
         }
-        detections.push(...lines);
         blocks.push(makeBlock<L>(region.label, region.box, region.confidence, lines, isTable));
       }
     } finally {
       tPage.dispose();
     }
-    // Order the blocks with the same column-aware reading order as the flat
-    // detections, so the two views of a multi-column page agree (a plain
-    // y-then-x sort interleaves columns).
-    const orderedBlocks = orderByReadingOrder(
+    // Blocks read in XY-cut order, which keeps the columns under a spanning
+    // title apart (the whole-page gutter sweep would interleave them), and
+    // the flat detections follow the blocks so the two views agree.
+    const orderedBlocks = orderByXyCut(
       blocks.map((block) => ({ block, quad: quadFromBounds(block.bbox) }))
     ).map((w) => w.block);
     return {
-      detections: orderByReadingOrder(detections),
+      detections: orderedBlocks.flatMap((block) => block.lines),
       blocks: orderedBlocks,
       regions,
       image: input,
