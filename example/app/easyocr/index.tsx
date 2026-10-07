@@ -1,7 +1,8 @@
 /**
- * EasyOCR (CRAFT + CRNN) on device: reads one of the two sample pages with
- * this package's `useOcr`, optionally with the `vertical` pass, and grades the
- * result against the text the page was rendered with
+ * EasyOCR (CRAFT + CRNN) on device: reads one of the sample pages (the two
+ * English ones, then one per other alphabet) with this package's `useOcr`,
+ * optionally with the `vertical` pass, and grades the result against the text
+ * the page was rendered with
  * (`assets/ocr/expected.json`). The verdict is the first thing on the screen
  * so a screenshot alone records it. The "Save detector heatmap" action writes
  * the raw CRAFT output as a fixture for the native parity test.
@@ -34,10 +35,29 @@ const LANGUAGES = Object.keys(models.ocr.EASYOCR) as Language[];
 type Backend = 'XNNPACK' | 'COREML' | 'VULKAN';
 const BACKENDS: Backend[] = ['XNNPACK', Platform.OS === 'ios' ? 'COREML' : 'VULKAN'];
 
-type SampleKey = 'sample' | 'vertical';
-const SAMPLES: { key: SampleKey; title: string; vertical: boolean }[] = [
+// The English pages, then one page per other alphabet; picking a script page
+// also picks its model. The CJK pages carry vertical columns next to their
+// horizontal lines, so they open with the vertical pass on.
+type SampleKey =
+  | 'sample'
+  | 'vertical'
+  | 'cyrillic'
+  | 'latin'
+  | 'japanese'
+  | 'zh_sim'
+  | 'korean'
+  | 'telugu'
+  | 'kannada';
+const SAMPLES: { key: SampleKey; title: string; vertical: boolean; language?: Language }[] = [
   { key: 'sample', title: 'Page', vertical: false },
   { key: 'vertical', title: 'Vertical', vertical: true },
+  { key: 'cyrillic', title: 'Cyrillic', vertical: false, language: 'CYRILLIC' },
+  { key: 'latin', title: 'Latin', vertical: false, language: 'LATIN' },
+  { key: 'japanese', title: 'Japanese', vertical: true, language: 'JAPANESE' },
+  { key: 'zh_sim', title: 'Chinese', vertical: true, language: 'ZH_SIM' },
+  { key: 'korean', title: 'Korean', vertical: true, language: 'KOREAN' },
+  { key: 'telugu', title: 'Telugu', vertical: false, language: 'TELUGU' },
+  { key: 'kannada', title: 'Kannada', vertical: false, language: 'KANNADA' },
 ];
 
 type Grade = {
@@ -104,10 +124,19 @@ export default function EasyOcrScreen() {
   const pages = {
     sample: useImage(require('../../assets/ocr/sample.png')),
     vertical: useImage(require('../../assets/ocr/vertical.png')),
-  };
+    cyrillic: useImage(require('../../assets/ocr/cyrillic.png')),
+    latin: useImage(require('../../assets/ocr/latin.png')),
+    japanese: useImage(require('../../assets/ocr/japanese.png')),
+    // eslint-disable-next-line camelcase -- named after `alphabets.zh_sim`
+    zh_sim: useImage(require('../../assets/ocr/zh_sim.png')),
+    korean: useImage(require('../../assets/ocr/korean.png')),
+    telugu: useImage(require('../../assets/ocr/telugu.png')),
+    kannada: useImage(require('../../assets/ocr/kannada.png')),
+  } satisfies Record<SampleKey, unknown>;
   // `/easyocr?lang=KOREAN&backend=COREML&sample=vertical&save=1` opens the
   // screen in that state (and saves the heatmap after the first run), so a
-  // run can be scripted without tapping.
+  // run can be scripted without tapping. `sample=korean` alone picks the
+  // Korean model too; `lang` overrides it.
   const params = useLocalSearchParams<{
     lang?: string;
     backend?: string;
@@ -116,7 +145,7 @@ export default function EasyOcrScreen() {
   }>();
   const initialSample = SAMPLES.find((s) => s.key === params.sample) ?? SAMPLES[0]!;
   const [language, setLanguage] = useState<Language>(
-    LANGUAGES.find((l) => l === params.lang) ?? 'ENGLISH'
+    LANGUAGES.find((l) => l === params.lang) ?? initialSample.language ?? 'ENGLISH'
   );
   const [backend, setBackend] = useState<Backend>(
     BACKENDS.find((b) => b === params.backend) ?? 'XNNPACK'
@@ -250,7 +279,7 @@ export default function EasyOcrScreen() {
           />
         ))}
       </View>
-      <View style={commonStyles.buttonRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.languages}>
         {SAMPLES.map((entry) => (
           <Button
             key={entry.key}
@@ -259,10 +288,14 @@ export default function EasyOcrScreen() {
             onPress={() => {
               setSample(entry.key);
               setVertical(entry.vertical);
+              if (entry.language) setLanguage(entry.language);
             }}
             disabled={busy}
+            style={styles.language}
           />
         ))}
+      </ScrollView>
+      <View style={commonStyles.buttonRow}>
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>vertical</Text>
           <Switch value={vertical} onValueChange={setVertical} disabled={busy} />
