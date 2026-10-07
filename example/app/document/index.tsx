@@ -119,6 +119,7 @@ function tableRows(html: string): string[][] {
 
 type Outcome = {
   readonly backend: Backend;
+  readonly helpersBackend: Backend;
   readonly sample: SampleKey;
   readonly stages: Stages;
   readonly result: OcrResult<DocLayoutLabel>;
@@ -183,6 +184,9 @@ export default function DocumentScreen() {
 
   // `/document?sample=table&backend=COREML&orientation=1&dewarp=0&layout=1&tables=1`
   // opens the screen in that state; a stage left out keeps the sample's default.
+  // The helper model has its own backend (`helpersBackend`) so its accelerated
+  // export can be tried while the OCR model stays on the CPU (PP-OCRv6's
+  // Vulkan export crashes at load, see the parity screen).
   // `dewarpRatio` overrides `dewarpMinVarianceRatio` (0 accepts every warp);
   // the curved page defaults to 0.1, since the flattened page keeps only about
   // a third of the variance of the photo once the dark table is cropped away.
@@ -194,12 +198,16 @@ export default function DocumentScreen() {
     layout?: string;
     tables?: string;
     dewarpRatio?: string;
+    helpersBackend?: string;
   }>();
   const initialSample = SAMPLES.find((s) => s.key === params.sample) ?? SAMPLES[0]!;
   const flag = (value: string | undefined, fallback: boolean) =>
     value === undefined ? fallback : value === '1';
   const [backend, setBackend] = useState<Backend>(
     BACKENDS.find((b) => b === params.backend) ?? 'XNNPACK'
+  );
+  const [helpersBackend, setHelpersBackend] = useState<Backend>(
+    BACKENDS.find((b) => b === params.helpersBackend) ?? 'XNNPACK'
   );
   const [sample, setSample] = useState<SampleKey>(initialSample.key);
   const [stages, setStages] = useState<Stages>({
@@ -231,16 +239,18 @@ export default function DocumentScreen() {
     () => ({
       ...models.ocr.PADDLE.PPOCRV6_SMALL[backend],
       documentModels: {
-        ...models.documentModels.PP_HELPERS[backend],
+        ...models.documentModels.PP_HELPERS[helpersBackend],
         ...(dewarpRatio === undefined ? {} : { dewarpMinVarianceRatio: dewarpRatio }),
       },
       ...(stages.layout ? { layout: models.layoutDetection.PP_DOCLAYOUT[backend] } : {}),
     }),
-    [backend, stages.layout, dewarpRatio]
+    [backend, helpersBackend, stages.layout, dewarpRatio]
   );
   const { isReady, error, downloadProgress, runOcr } = useOcr<DocLayoutLabel>(config);
 
-  const setup = `${backend} ${sample} ${describeStages(stages)} dewarpRatio=${dewarpRatio ?? 'default'}`;
+  const setup =
+    `${backend} helpers=${helpersBackend} ${sample} ${describeStages(stages)} ` +
+    `dewarpRatio=${dewarpRatio ?? 'default'}`;
   useEffect(() => {
     console.log(`[rnocr-document] ${Platform.OS} ${setup} loading`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,6 +285,7 @@ export default function DocumentScreen() {
       const texts = result.detections.map((d) => d.text);
       const next: Outcome = {
         backend,
+        helpersBackend,
         sample,
         stages,
         result,
@@ -299,6 +310,7 @@ export default function DocumentScreen() {
       saveLastRun({
         screen: 'document',
         backend,
+        helpersBackend,
         sample,
         stages,
         ms,
@@ -383,6 +395,18 @@ export default function DocumentScreen() {
         ))}
       </View>
       <View style={commonStyles.buttonRow}>
+        <Text style={styles.switchLabel}>helper model</Text>
+        {BACKENDS.map((key) => (
+          <Button
+            key={key}
+            title={key}
+            variant={key === helpersBackend ? 'primary' : 'secondary'}
+            onPress={() => setHelpersBackend(key)}
+            disabled={busy}
+          />
+        ))}
+      </View>
+      <View style={commonStyles.buttonRow}>
         {SAMPLES.map((s) => (
           <Button
             key={s.key}
@@ -421,7 +445,10 @@ export default function DocumentScreen() {
         isReady={isReady}
         downloadProgress={downloadProgress}
         error={error?.message}
-        modelTypeLabel={`PP-OCRv6 + PaddleHelpers${stages.layout ? ' + PP-DocLayout' : ''} ${backend}`}
+        modelTypeLabel={
+          `PP-OCRv6 ${backend} + PaddleHelpers ${helpersBackend}` +
+          (stages.layout ? ` + PP-DocLayout ${backend}` : '')
+        }
       />
       {failure && <Text style={styles.failure}>{failure}</Text>}
       {outcome && (
@@ -437,7 +464,7 @@ export default function DocumentScreen() {
             {outcome.result.detections.length} detections · {outcome.result.regions.length} regions
             · {outcome.result.blocks.length} blocks · frame {outcome.result.image.width}x
             {outcome.result.image.height} {outcome.corrected ? 'corrected' : 'unchanged'} ·{' '}
-            {outcome.ms} ms · {Platform.OS} · {outcome.backend}
+            {outcome.ms} ms · {Platform.OS} · {outcome.backend} · helpers {outcome.helpersBackend}
           </Text>
           <Text style={styles.verdictLine}>{describeStages(outcome.stages)}</Text>
           {outcome.sample === 'table' && (
