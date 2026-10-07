@@ -75,6 +75,7 @@ function grade(read: readonly string[], lines: readonly string[]): Grade {
 type Outcome = {
   readonly backend: Backend;
   readonly layout: boolean;
+  readonly layoutBackend: Backend;
   readonly result: OcrResult<DocLayoutLabel>;
   readonly grade: Grade;
   readonly ms: number;
@@ -94,32 +95,39 @@ function describeBlock(block: DocumentBlock<DocLayoutLabel>): string {
 
 export default function LayoutScreen() {
   const image = useImage(require('../../assets/ocr/layout.png'));
-  // `/layout?backend=COREML&layout=0` opens the screen in that state.
-  const params = useLocalSearchParams<{ backend?: string; layout?: string }>();
+  // `/layout?backend=COREML&layoutBackend=XNNPACK&layout=0` opens the screen
+  // in that state. The layout model has its own backend so its accelerated
+  // export can be tried while the OCR model stays on the CPU (PP-OCRv6's
+  // Vulkan export crashes at load, see the parity screen).
+  const params = useLocalSearchParams<{
+    backend?: string;
+    layoutBackend?: string;
+    layout?: string;
+  }>();
   const [backend, setBackend] = useState<Backend>(
     BACKENDS.find((b) => b === params.backend) ?? 'XNNPACK'
+  );
+  const [layoutBackend, setLayoutBackend] = useState<Backend>(
+    BACKENDS.find((b) => b === params.layoutBackend) ?? 'XNNPACK'
   );
   const [layoutOn, setLayoutOn] = useState(params.layout !== '0');
   const config = useMemo<OcrModel<DocLayoutLabel>>(
     () => ({
       ...models.ocr.PADDLE.PPOCRV6_SMALL[backend],
-      ...(layoutOn ? { layout: models.layoutDetection.PP_DOCLAYOUT[backend] } : {}),
+      ...(layoutOn ? { layout: models.layoutDetection.PP_DOCLAYOUT[layoutBackend] } : {}),
     }),
-    [backend, layoutOn]
+    [backend, layoutBackend, layoutOn]
   );
   const { isReady, error, downloadProgress, runOcr } = useOcr<DocLayoutLabel>(config);
 
+  const setup = `${backend} layout=${layoutOn ? layoutBackend : 'off'}`;
   useEffect(() => {
-    console.log(`[rnocr-layout] ${Platform.OS} ${backend} layout=${layoutOn} loading`);
-  }, [backend, layoutOn]);
+    console.log(`[rnocr-layout] ${Platform.OS} ${setup} loading`);
+  }, [setup]);
   useEffect(() => {
-    if (isReady) console.log(`[rnocr-layout] ${Platform.OS} ${backend} layout=${layoutOn} loaded`);
-    if (error) {
-      console.log(
-        `[rnocr-layout] ${Platform.OS} ${backend} layout=${layoutOn} failed: ${error.message}`
-      );
-    }
-  }, [isReady, error, backend, layoutOn]);
+    if (isReady) console.log(`[rnocr-layout] ${Platform.OS} ${setup} loaded`);
+    if (error) console.log(`[rnocr-layout] ${Platform.OS} ${setup} failed: ${error.message}`);
+  }, [isReady, error, setup]);
 
   const [outcome, setOutcome] = useState<Outcome>();
   const [failure, setFailure] = useState<string>();
@@ -140,13 +148,14 @@ export default function LayoutScreen() {
       const next: Outcome = {
         backend,
         layout: layoutOn,
+        layoutBackend,
         result,
         grade: grade(texts, EXPECTED),
         ms,
       };
       const regions = result.regions.map((r) => `${r.label}:${r.confidence.toFixed(2)}`);
       console.log(
-        `[rnocr-layout] ${Platform.OS} ${backend} layout=${layoutOn} ` +
+        `[rnocr-layout] ${Platform.OS} ${setup} ` +
           `${next.grade.found}/${EXPECTED.length} expected lines read, ` +
           `${texts.length} detections, ${result.regions.length} regions, ` +
           `${result.blocks.length} blocks, ${ms} ms; regions ${JSON.stringify(regions)}; ` +
@@ -158,6 +167,7 @@ export default function LayoutScreen() {
         screen: 'layout',
         backend,
         layout: layoutOn,
+        layoutBackend,
         ms,
         grade: next.grade,
         regions: result.regions,
@@ -166,7 +176,9 @@ export default function LayoutScreen() {
       }).catch(() => {});
     } catch (e) {
       const err = e as { name?: string; code?: string; message?: string };
-      setFailure(`${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`);
+      const line = `${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`;
+      console.log(`[rnocr-layout] ${Platform.OS} ${setup} run failed: ${line}`);
+      setFailure(line);
     } finally {
       setBusy(false);
     }
@@ -206,6 +218,18 @@ export default function LayoutScreen() {
             disabled={busy}
           />
         ))}
+      </View>
+      <View style={commonStyles.buttonRow}>
+        <Text style={styles.switchLabel}>layout model</Text>
+        {BACKENDS.map((key) => (
+          <Button
+            key={key}
+            title={key}
+            variant={key === layoutBackend ? 'primary' : 'secondary'}
+            onPress={() => setLayoutBackend(key)}
+            disabled={busy || !layoutOn}
+          />
+        ))}
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>layout</Text>
           <Switch value={layoutOn} onValueChange={setLayoutOn} disabled={busy} />
@@ -215,7 +239,9 @@ export default function LayoutScreen() {
         isReady={isReady}
         downloadProgress={downloadProgress}
         error={error?.message}
-        modelTypeLabel={layoutOn ? 'PP-OCRv6 + PP-DocLayout' : 'PP-OCRv6'}
+        modelTypeLabel={
+          layoutOn ? `PP-OCRv6 ${backend} + PP-DocLayout ${layoutBackend}` : `PP-OCRv6 ${backend}`
+        }
       />
       {failure && <Text style={styles.failure}>{failure}</Text>}
       {outcome && (
@@ -226,7 +252,7 @@ export default function LayoutScreen() {
           <Text style={styles.verdictLine}>
             {outcome.result.detections.length} detections · {outcome.result.regions.length} regions
             · {outcome.result.blocks.length} blocks · {outcome.ms} ms · {Platform.OS} ·{' '}
-            {outcome.backend} · layout {outcome.layout ? 'on' : 'off'}
+            {outcome.backend} · layout {outcome.layout ? outcome.layoutBackend : 'off'}
           </Text>
           {outcome.grade.missing.map((line) => (
             <Text key={`m${line}`} style={styles.difference}>

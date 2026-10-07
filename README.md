@@ -119,7 +119,11 @@ ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The 
 made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
 no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android. The
 EasyOCR Vulkan exports load and run on a Galaxy S23 (they keep the recognizer on XNNPACK), but
-crash the Android emulator; use `XNNPACK` there.
+crash the Android emulator; use `XNNPACK` there. The PP-DocLayout Vulkan export
+(`models.layoutDetection.PP_DOCLAYOUT.VULKAN`, also the Android `DEFAULT`) loads on the S23 but
+fails at execute inside ExecuTorch's Vulkan backend (`Vulkan graph declares 3 inputs and 4
+outputs, but the delegate call supplied 8 arguments`), an export defect being fixed outside this
+package; use `PP_DOCLAYOUT.XNNPACK` on Android.
 
 ## Requirements
 
