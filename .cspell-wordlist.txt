@@ -91,3 +91,8 @@ lanczos
 letterboxing
 minilm
 CRFT
+onehot
+rowspan
+softmax
+colspan
+dewarped

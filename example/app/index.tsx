@@ -14,6 +14,7 @@ export default function Home() {
       <Button title="PaddleOCR parity" onPress={() => router.push('/ocr')} />
       <Button title="EasyOCR + vertical text" onPress={() => router.push('/easyocr')} />
       <Button title="Layout (PP-DocLayout)" onPress={() => router.push('/layout')} />
+      <Button title="Document helpers" onPress={() => router.push('/document')} />
       {Platform.OS === 'android' && (
         <Button
           title="Vulkan diagnostics"

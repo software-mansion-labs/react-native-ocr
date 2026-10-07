@@ -27,13 +27,8 @@ Advanced on-device OCR for React Native, built on top of
 - Document layout with PP-DocLayoutV3 (`layout` on the model config): the page is split into
   labelled regions, each region is read on its own crop, and the result carries the regions and
   reading-ordered blocks.
-
-## Planned
-
-- Document helpers: page orientation, UVDoc dewarping and SLANet table structure
-  (`documentModels` on the model config).
-
-`createOcr` rejects a config that sets `documentModels` until it lands.
+- Document helpers with PaddleHelpers (`documentModels` on the model config): page orientation,
+  UVDoc dewarping and SLANet table structure, each toggled per run.
 
 ## Usage
 
@@ -87,10 +82,39 @@ crop; the lines are returned in page coordinates. `blocks` has one block per reg
 (`regionType`, `bbox`, `layoutConfidence`, `lines`, `text`) in reading order; `detections` follows
 the blocks.
 Regions labelled `image`, `chart` or `seal` are skipped (`visualLabels` on the config changes
-the list); a `table` region (`tableLabel`) always yields a block, flagged `isTable`, and will
-carry `tableHtml` once the document helpers land. Reading each region on its own crop costs one
-detector pass per region: the example's paper-like page takes about 2 s with layout against
-0.8 s whole-page on the iOS simulator.
+the list); a `table` region (`tableLabel`) always yields a block, flagged `isTable`, and carries
+`tableHtml` when the document helpers are loaded with a table config. Reading each region on its
+own crop costs one detector pass per region: the example's paper-like page takes about 2 s with
+layout against 0.8 s whole-page on the iOS simulator.
+
+### Orientation, dewarp and tables
+
+```tsx
+const { isReady, runOcr } = useOcr<DocLayoutLabel>({
+  ...models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT,
+  layout: models.layoutDetection.PP_DOCLAYOUT.DEFAULT,
+  documentModels: models.documentModels.PP_HELPERS.DEFAULT,
+});
+
+const { image, blocks } = await runOcr!(photo, { orientation: true, dewarp: true });
+for (const block of blocks) {
+  if (block.isTable) console.log(block.tableHtml);
+}
+```
+
+`documentModels` loads the fused PaddleHelpers program alongside the OCR model. Per run,
+`orientation` classifies the page's rotation (0, 90, 180 or 270 degrees) and turns it upright
+when the classifier is at least `orientationMinConfidence` sure (default 0.85), then `dewarp`
+flattens a curled or photographed page through the predicted UVDoc sampling grid, declining the
+warp when it would wipe out most of the page's variance (`dewarpMinVarianceRatio`, default
+0.5). A page photographed on a dark background keeps only about a third of its variance once
+the background is cropped away, so set the ratio to about 0.1 for photos (the example's curved
+page does); a collapsed page keeps close to none. Both are off unless the config or the run turns them on; the result's `image` is the
+corrected frame, and every coordinate refers to it. With a `layout` model, each `table` region
+is also run through the SLANet structure decoder and its lines are placed into the recognized
+`<tr>`/`<td>` skeleton by nearest row and column centre (`fillTableCells`, also exported for
+your own skeletons); that is on whenever the helpers carry a table config, and `tables: false`
+skips it for a run.
 
 ### Vertical text
 
@@ -123,7 +147,9 @@ crash the Android emulator; use `XNNPACK` there. The PP-DocLayout Vulkan export
 (`models.layoutDetection.PP_DOCLAYOUT.VULKAN`, also the Android `DEFAULT`) loads on the S23 but
 fails at execute inside ExecuTorch's Vulkan backend (`Vulkan graph declares 3 inputs and 4
 outputs, but the delegate call supplied 8 arguments`), an export defect being fixed outside this
-package; use `PP_DOCLAYOUT.XNNPACK` on Android.
+package; use `PP_DOCLAYOUT.XNNPACK` on Android. The PaddleHelpers Vulkan export
+(`models.documentModels.PP_HELPERS.VULKAN`, the Android `DEFAULT`) crashes at load on the S23
+exactly like PP-OCRv6's; use `PP_HELPERS.XNNPACK` on Android until the fix ships.
 
 ## Requirements
 

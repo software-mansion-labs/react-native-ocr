@@ -1,10 +1,18 @@
-import { IMAGENET_NORM } from 'react-native-executorch';
+import { IMAGENET_NORM, tensor } from 'react-native-executorch';
 import * as cv from 'react-native-executorch/cv';
 import { ConstantDim } from 'react-native-executorch/schema';
+import { rotateTensor, type RotationDegrees } from '../../src/native/ops';
 import { createOcr } from '../../src/ocr/createOcr';
 import { makeDbnetExtractBoxes } from '../../src/ocr/detectors';
 import type { OcrModel } from '../../src/ocr/types';
-import { setFakeDbnetTextQuads } from '../support/cvMock';
+import { setFakeDbnetTextQuads, type ImageBuffer } from '../support/cvMock';
+import {
+  FAKE_EOS,
+  FAKE_STRUCTURE_VOCAB,
+  HELPERS,
+  installFakeHelpersModel,
+  mirroredGrid,
+} from '../support/fakeHelpersModel';
 import {
   blankPage,
   FAKE_CHARSET,
@@ -144,14 +152,6 @@ describe('createOcr', () => {
   it('releases the model when it does not match the contract', async () => {
     installFakeOcrModel(PATH, { schema: fakeOcrSchema({ vocab: 4 }) });
     await expect(createOcr(CONFIG)).rejects.toEqual(codedError('SCHEMA_MISMATCH'));
-    expect(modelTracker.liveCount()).toBe(0);
-  });
-
-  it('rejects a config with documentModels before loading anything', async () => {
-    installFakeOcrModel(PATH);
-    const config = { ...CONFIG, documentModels: { modelPath: '/models/helpers.pte' } };
-    await expect(createOcr(config)).rejects.toEqual(codedError('INVALID_ARGUMENT'));
-    await expect(createOcr(config)).rejects.toThrow('documentModels');
     expect(modelTracker.liveCount()).toBe(0);
   });
 });
@@ -313,6 +313,295 @@ describe('createOcr with a layout model', () => {
     expect(modelTracker.liveCount()).toBe(0);
   });
 });
+
+describe('createOcr with document models', () => {
+  const HELPERS_PATH = '/models/helpers.pte';
+  const TABLE = { structureVocab: FAKE_STRUCTURE_VOCAB, eosTokenId: FAKE_EOS, maxSteps: 20 };
+  const DM_CONFIG: OcrModel = {
+    ...CONFIG,
+    documentModels: { modelPath: HELPERS_PATH, table: TABLE },
+  };
+  const line = (text: string, quad: ReturnType<typeof paintLine>) => ({
+    text,
+    confidence: 1,
+    quad,
+  });
+  // The 90° class with certainty, and the same class at a confidence below the gate.
+  const SHOWS_90 = [0, 20, 0, 0];
+  const MAYBE_90 = [0, 1, 0, 0];
+  const ZERO_GRID = new Float32Array(2 * HELPERS.gridH * HELPERS.gridW);
+
+  /** A 64x32 page reading `bad`, and the same page turned 90° clockwise. */
+  function uprightAndTurned() {
+    const upright = blankPage(64, 32);
+    const bad = paintLine(upright, 0, 4, 'bad');
+    const turned = rotate(upright, 90);
+    return { upright, bad, turned };
+  }
+
+  it('rotates a page upright before reading it when orientation is on', async () => {
+    const calls = installFakeHelpersModel(HELPERS_PATH, { logits: SHOWS_90 });
+    installFakeOcrModel(PATH);
+    const { upright, bad, turned } = uprightAndTurned();
+    setFakeDbnetTextQuads(() => [bad]);
+    const ocr = await createOcr({
+      ...DM_CONFIG,
+      documentModels: { ...DM_CONFIG.documentModels!, orientation: true },
+    });
+    const result = await ocr.runOcr(turned);
+    ocr.dispose();
+    expect(calls.orientation).toBe(1);
+    expect(result.image).toEqual(upright);
+    expect(result.image).not.toBe(turned);
+    expect(result.detections).toEqual([line('bad', bad)]);
+    expect(result.blocks[0]).toMatchObject({ regionType: 'ungrouped', text: 'bad' });
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  it('leaves the page alone when the classifier is not confident enough', async () => {
+    installFakeHelpersModel(HELPERS_PATH, { logits: MAYBE_90 });
+    installFakeOcrModel(PATH);
+    const { turned } = uprightAndTurned();
+    setFakeDbnetTextQuads(() => []);
+    const ocr = await createOcr(DM_CONFIG);
+    expect(ocr.runOcrWorklet(turned, { orientation: true }).image).toBe(turned);
+    ocr.dispose();
+
+    const lenient = await createOcr({
+      ...DM_CONFIG,
+      documentModels: { ...DM_CONFIG.documentModels!, orientationMinConfidence: 0.4 },
+    });
+    const result = lenient.runOcrWorklet(turned, { orientation: true });
+    lenient.dispose();
+    expect(result.image).toMatchObject({ width: 64, height: 32 });
+  });
+
+  it('leaves a page that is already upright alone', async () => {
+    installFakeHelpersModel(HELPERS_PATH, { logits: [20, 0, 0, 0] });
+    installFakeOcrModel(PATH);
+    const { upright } = uprightAndTurned();
+    setFakeDbnetTextQuads(() => []);
+    const ocr = await createOcr(DM_CONFIG);
+    expect(ocr.runOcrWorklet(upright, { orientation: true }).image).toBe(upright);
+    ocr.dispose();
+  });
+
+  it('defaults the per-run orientation and dewarp flags to the config', async () => {
+    const calls = installFakeHelpersModel(HELPERS_PATH, { logits: [20, 0, 0, 0] });
+    installFakeOcrModel(PATH);
+    const page = blankPage(64, 32);
+    setFakeDbnetTextQuads(() => []);
+    const off = await createOcr(DM_CONFIG);
+    off.runOcrWorklet(page);
+    off.dispose();
+    expect(calls).toMatchObject({ orientation: 0, dewarp: 0 });
+
+    const on = await createOcr({
+      ...DM_CONFIG,
+      documentModels: { ...DM_CONFIG.documentModels!, orientation: true, dewarp: true },
+    });
+    on.runOcrWorklet(page);
+    expect(calls).toMatchObject({ orientation: 1, dewarp: 1 });
+    on.runOcrWorklet(page, { orientation: false, dewarp: false });
+    on.dispose();
+    expect(calls).toMatchObject({ orientation: 1, dewarp: 1 });
+  });
+
+  it('reads the dewarped page and returns it as the result frame', async () => {
+    installFakeHelpersModel(HELPERS_PATH, { grid: mirroredGrid() });
+    installFakeOcrModel(PATH);
+    const page = blankPage(64, 32);
+    const bad = paintLine(page, 0, 4, 'bad');
+    // Mirrored, the line sits at the right edge and reads backwards.
+    const mirrored = blankPage(64, 32);
+    const dab = paintLine(mirrored, 40, 4, 'dab');
+    setFakeDbnetTextQuads(() => [dab]);
+    const ocr = await createOcr(DM_CONFIG);
+    const result = ocr.runOcrWorklet(page, { dewarp: true });
+    ocr.dispose();
+    expect(result.image).toEqual(mirrored);
+    expect(result.detections).toEqual([line('dab', dab)]);
+    expect(bad[0]).toEqual({ x: 0, y: 4 });
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  it('keeps the input frame when the dewarp is declined', async () => {
+    const calls = installFakeHelpersModel(HELPERS_PATH, { grid: ZERO_GRID });
+    installFakeOcrModel(PATH);
+    const page = blankPage(64, 32);
+    const bad = paintLine(page, 0, 4, 'bad');
+    setFakeDbnetTextQuads(() => [bad]);
+    const ocr = await createOcr(DM_CONFIG);
+    const result = ocr.runOcrWorklet(page, { dewarp: true });
+    ocr.dispose();
+    expect(calls.dewarp).toBe(1);
+    expect(result.image).toBe(page);
+    expect(result.detections).toEqual([line('bad', bad)]);
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  it('rotates and then flattens, with the layout detector seeing the corrected frame', async () => {
+    installFakeHelpersModel(HELPERS_PATH, { logits: SHOWS_90, grid: mirroredGrid() });
+    installFakeOcrModel(PATH);
+    const LAYOUT_PATH = '/models/layout.pte';
+    setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+    const { turned } = uprightAndTurned();
+    const seen: ImageBuffer[] = [];
+    const regionBox = { format: 'xyxy' as const, xmin: 32, ymin: 0, xmax: 64, ymax: 32 };
+    setFakeLayoutRegions((input) => {
+      seen.push(input);
+      return [{ box: regionBox, label: 'text', confidence: 0.9 }];
+    });
+    const dab = paintLine(blankPage(64, 32), 8, 4, 'dab'); // in crop coordinates
+    setFakeDbnetTextQuads(() => [dab]);
+    const ocr = await createOcr<'text'>({
+      ...DM_CONFIG,
+      layout: {
+        modelPath: LAYOUT_PATH,
+        modelOpts: { labels: ['text'], boxFormat: 'xyxy' },
+      } as unknown as NonNullable<OcrModel<'text'>['layout']>,
+    });
+    const result = ocr.runOcrWorklet(turned, { orientation: true, dewarp: true });
+    ocr.dispose();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ width: 64, height: 32 });
+    expect(result.image).toBe(seen[0]);
+    expect(result.blocks).toEqual([
+      expect.objectContaining({ regionType: 'text', bbox: regionBox, text: 'dab' }),
+    ]);
+    expect(result.detections[0]!.quad[0]).toEqual({ x: 40, y: 4 });
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  describe('tables', () => {
+    const LAYOUT_PATH = '/models/layout.pte';
+    type Label = 'text' | 'table';
+    const TABLE_CONFIG: OcrModel<Label> = {
+      ...DM_CONFIG,
+      layout: {
+        modelPath: LAYOUT_PATH,
+        modelOpts: { labels: ['text', 'table'], boxFormat: 'xyxy' },
+      } as unknown as NonNullable<OcrModel<Label>['layout']>,
+    };
+    const tableRegion = {
+      box: { format: 'xyxy' as const, xmin: 0, ymin: 0, xmax: 64, ymax: 32 },
+      label: 'table' as const,
+      confidence: 0.9,
+    };
+    // A one-row, two-cell skeleton.
+    const ROW_OF_TWO = [1, 3, 3, 2, FAKE_EOS];
+
+    it('fills the recognized structure of a table region with its lines', async () => {
+      const calls = installFakeHelpersModel(HELPERS_PATH, { tokens: ROW_OF_TWO });
+      installFakeOcrModel(PATH);
+      setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+      const page = blankPage(64, 32);
+      const bad = paintLine(page, 0, 12, 'bad');
+      const cab = paintLine(page, 40, 12, 'cab');
+      setFakeLayoutRegions(() => [tableRegion]);
+      setFakeDbnetTextQuads(() => [cab, bad]);
+      const ocr = await createOcr<Label>(TABLE_CONFIG);
+      const result = ocr.runOcrWorklet(page);
+      ocr.dispose();
+      expect(calls.tableEncode).toBe(1);
+      expect(result.blocks).toEqual([
+        {
+          regionType: 'table',
+          bbox: tableRegion.box,
+          layoutConfidence: 0.9,
+          isTable: true,
+          lines: [line('bad', bad), line('cab', cab)],
+          text: 'bad\ncab',
+          tableHtml: '<tr><td>bad</td><td>cab</td></tr>',
+        },
+      ]);
+      expect(tensorTracker.liveCount()).toBe(0);
+    });
+
+    it('still recognizes the structure of a table without any text', async () => {
+      installFakeHelpersModel(HELPERS_PATH, { tokens: ROW_OF_TWO });
+      installFakeOcrModel(PATH);
+      setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+      setFakeLayoutRegions(() => [tableRegion]);
+      setFakeDbnetTextQuads(() => []);
+      const ocr = await createOcr<Label>(TABLE_CONFIG);
+      const result = ocr.runOcrWorklet(blankPage(64, 32));
+      ocr.dispose();
+      expect(result.blocks[0]).toMatchObject({
+        isTable: true,
+        lines: [],
+        tableHtml: '<tr><td></td><td></td></tr>',
+      });
+    });
+
+    it('skips the decoder with tables: false or without a table config', async () => {
+      const calls = installFakeHelpersModel(HELPERS_PATH, { tokens: ROW_OF_TWO });
+      installFakeOcrModel(PATH);
+      setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+      setFakeLayoutRegions(() => [tableRegion]);
+      setFakeDbnetTextQuads(() => []);
+      const ocr = await createOcr<Label>(TABLE_CONFIG);
+      const result = ocr.runOcrWorklet(blankPage(64, 32), { tables: false });
+      ocr.dispose();
+      expect(result.blocks[0]).toMatchObject({ isTable: true });
+      expect(result.blocks[0]).not.toHaveProperty('tableHtml');
+
+      const noTable = await createOcr<Label>({
+        ...TABLE_CONFIG,
+        documentModels: { modelPath: HELPERS_PATH },
+      });
+      expect(noTable.runOcrWorklet(blankPage(64, 32)).blocks[0]).not.toHaveProperty('tableHtml');
+      noTable.dispose();
+      expect(calls.tableEncode).toBe(0);
+    });
+  });
+
+  it('releases all three models on dispose', async () => {
+    installFakeHelpersModel(HELPERS_PATH);
+    installFakeOcrModel(PATH);
+    const LAYOUT_PATH = '/models/layout.pte';
+    setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+    const ocr = await createOcr({
+      ...DM_CONFIG,
+      layout: {
+        modelPath: LAYOUT_PATH,
+        modelOpts: { labels: [], boxFormat: 'xyxy' },
+      } as unknown as NonNullable<OcrModel['layout']>,
+    });
+    expect(modelTracker.liveCount()).toBe(3);
+    ocr.dispose();
+    expect(modelTracker.liveCount()).toBe(0);
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  it('releases the other models when the helpers cannot be loaded', async () => {
+    installFakeOcrModel(PATH);
+    const LAYOUT_PATH = '/models/layout.pte';
+    setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+    await expect(
+      createOcr({
+        ...DM_CONFIG,
+        layout: {
+          modelPath: LAYOUT_PATH,
+          modelOpts: { labels: [], boxFormat: 'xyxy' },
+        } as unknown as NonNullable<OcrModel['layout']>,
+      })
+    ).rejects.toEqual(codedError('LOAD_FAILED'));
+    expect(modelTracker.liveCount()).toBe(0);
+  });
+});
+
+/** Turns a page clockwise through the fake native op. */
+function rotate(page: ImageBuffer, degrees: RotationDegrees): ImageBuffer {
+  const channels = page.data.length / (page.width * page.height);
+  const src = tensor('uint8', [page.height, page.width, channels], page.data);
+  const out = rotateTensor(src, degrees);
+  const [height, width] = out.shape as [number, number, number];
+  const data = out.getData(new Uint8Array(page.data.length));
+  out.dispose();
+  src.dispose();
+  return { ...page, data, width, height };
+}
 
 /** Moves a painted quad, as the detector sees it on a crop. */
 function shift<Q extends readonly { x: number; y: number }[]>(quad: Q, dx: number, dy: number): Q {
