@@ -1,34 +1,70 @@
 # @swmansion/react-native-ocr
 
 Advanced on-device OCR for React Native, built on top of
-[react-native-executorch](https://github.com/software-mansion/react-native-executorch).
+[react-native-executorch](https://github.com/software-mansion/react-native-executorch): EasyOCR
+and PaddleOCR text detection and recognition, vertical text, document layout, page orientation,
+dewarping and table structure, all running on the device through ExecuTorch.
 
-> **Status: pre-release.** The package is being built up phase by phase; see
-> `plan.md` for the roadmap and the current state. Nothing here is published to npm yet.
+> **Status: pre-release.** `0.1.0` is being prepared and nothing is published to npm yet; the
+> API below is what it will ship. `plan.md` holds the roadmap and the verification record.
 
-## What works today
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Models](#models)
+- [EasyOCR alphabets](#easyocr-alphabets)
+- [Known issue: the Vulkan exports](#known-issue-the-vulkan-exports)
+- [API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+
+## Features
 
 - Whole-page text detection and recognition with PaddleOCR PP-OCRv6 through `useOcr` and
-  `createOcr`: oriented quads with text and confidence, in reading order, with the same
-  results as react-native-executorch's `useOpticalCharacterRecognizer` on the same model.
-- EasyOCR (CRAFT + CRNN) in eight alphabets, verified on device for English, and vertical text
-  (`vertical: true` per run): upright glyph stacks are clustered or re-detected glyph by glyph
-  and read top to bottom.
-- A model registry (`models`) with XNNPACK, Core ML and Vulkan exports and a per-platform
-  `DEFAULT`.
-- Pluggable detector strategies (`craftExtractBoxes`, `dbnetExtractBoxes`, or your own
-  `TextBoxExtractor`), per-model recognizer options (charset, normalization, padding, a custom
-  CTC decode) and per-run options.
-- A small native module (C++ with OpenCV, JSI) for the kernels the pipeline needs and
-  react-native-executorch does not expose: `rotateTensor`, `cropTensor`, `warpByGridTensor`,
-  `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
-  public API.
-
+  `createOcr`: oriented quads with text and confidence, in reading order, with the same results
+  as react-native-executorch's `useOpticalCharacterRecognizer` on the same model.
+- EasyOCR (CRAFT + CRNN) in eight alphabets (English, Cyrillic, Latin, Japanese, simplified
+  Chinese, Korean, Telugu, Kannada), and vertical text (`vertical: true` per run): upright glyph
+  stacks are clustered or re-detected glyph by glyph and read top to bottom.
 - Document layout with PP-DocLayoutV3 (`layout` on the model config): the page is split into
   labelled regions, each region is read on its own crop, and the result carries the regions and
   reading-ordered blocks.
 - Document helpers with PaddleHelpers (`documentModels` on the model config): page orientation,
-  UVDoc dewarping and SLANet table structure, each toggled per run.
+  UVDoc dewarping and SLANet table structure (`tableHtml` per table block), each toggled per run.
+- A model registry (`models`) with XNNPACK, Core ML and Vulkan exports and a per-platform
+  `DEFAULT`.
+- Pluggable detector strategies (`craftExtractBoxes`, `dbnetExtractBoxes`, or your own
+  `TextBoxExtractor`), per-model recognizer options (charset, normalization, padding, a custom CTC
+  decode) and per-run options.
+- A small native module (C++ with OpenCV, JSI) for the kernels the pipeline needs and
+  react-native-executorch does not expose: `rotateTensor`, `cropTensor`, `warpByGridTensor`,
+  `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
+  public API, and the whole pipeline runs on its worklet runtime.
+
+## Installation
+
+```sh
+yarn add @swmansion/react-native-ocr react-native-executorch
+```
+
+Requirements:
+
+- `react-native-executorch` 0.10.2 or newer, installed alongside this package, and
+  `react-native-worklets` 0.10 to 0.12.
+- iOS 17+, Android API 26+, the New Architecture. The package has native code, so an Expo app
+  needs a development build (`expo run:ios` / `expo run:android`), not Expo Go; bare apps run
+  `pod install` after installing.
+- The app must opt into react-native-executorch's `ocr` feature so OpenCV is downloaded for both
+  packages:
+
+```json
+{
+  "react-native-executorch": {
+    "features": ["ocr"]
+  }
+}
+```
+
+Models download from Hugging Face on first use and are cached by react-native-executorch;
+`useOcr` reports `downloadProgress`.
 
 ## Usage
 
@@ -109,12 +145,12 @@ flattens a curled or photographed page through the predicted UVDoc sampling grid
 warp when it would wipe out most of the page's variance (`dewarpMinVarianceRatio`, default
 0.5). A page photographed on a dark background keeps only about a third of its variance once
 the background is cropped away, so set the ratio to about 0.1 for photos (the example's curved
-page does); a collapsed page keeps close to none. Both are off unless the config or the run turns them on; the result's `image` is the
-corrected frame, and every coordinate refers to it. With a `layout` model, each `table` region
-is also run through the SLANet structure decoder and its lines are placed into the recognized
-`<tr>`/`<td>` skeleton by nearest row and column centre (`fillTableCells`, also exported for
-your own skeletons); that is on whenever the helpers carry a table config, and `tables: false`
-skips it for a run.
+page does); a collapsed page keeps close to none. Both are off unless the config or the run turns
+them on; the result's `image` is the corrected frame, and every coordinate refers to it. With a
+`layout` model, each `table` region is also run through the SLANet structure decoder and its
+lines are placed into the recognized `<tr>`/`<td>` skeleton by nearest row and column centre
+(`fillTableCells`, also exported for your own skeletons); that is on whenever the helpers carry a
+table config, and `tables: false` skips it for a run.
 
 ### Vertical text
 
@@ -129,13 +165,53 @@ glyph gives the recognizer no context, so `O` and `0` or `l` and `I` can swap, a
 touch are only approximately separated. With PaddleOCR (DBNet, no glyph-level mode) stacks are
 read as clustered glyphs only.
 
-### Known limits of the int8 EasyOCR exports
+## Models
 
-The EasyOCR XNNPACK and Core ML exports are int8. On the example's printed page the English model
-read about 90% of the characters right, with substitutions such as `m`/`n` or `!`/`l`, where the
-fp32 PP-OCRv6 export read every line exactly; prefer PP-OCRv6 for Latin text.
+Every entry of the registry carries `XNNPACK`, `COREML` and `VULKAN` exports plus a `DEFAULT`
+that resolves to the fastest one the platform can run: Core ML on an iOS device, XNNPACK on the
+simulator, Vulkan on Android when the app links that backend, else XNNPACK. The exports are
+published on Hugging Face by Software Mansion.
 
-### Known issue: the Vulkan export crashes at load
+| Registry entry                        | What it is                                                | XNNPACK | Core ML | Vulkan |
+| ------------------------------------- | --------------------------------------------------------- | ------- | ------- | ------ |
+| `models.ocr.PADDLE.PPOCRV6_SMALL`     | PP-OCRv6 small: DBNet detector + SVTR recognizer          | fp32    | int8    | fp16   |
+| `models.ocr.EASYOCR.<ALPHABET>`       | EasyOCR: CRAFT detector + CRNN recognizer, one per script | int8    | int8    | fp16¹  |
+| `models.layoutDetection.PP_DOCLAYOUT` | PP-DocLayoutV3, 25 region classes                         | fp32    | fp16    | fp16   |
+| `models.documentModels.PP_HELPERS`    | PaddleHelpers: orientation, UVDoc dewarp, SLANet tables   | int8    | int8    | fp16   |
+
+¹ the CRAFT detector on Vulkan, the CRNN recognizer on XNNPACK.
+
+The int8 Core ML PP-OCRv6 export detects less small text than the fp32 XNNPACK one; that is a
+property of the export, the same as under react-native-executorch.
+
+## EasyOCR alphabets
+
+The EasyOCR exports are int8 (XNNPACK and Core ML) and read a printed page as below. Each page
+(`example/assets/ocr/<script>.png`, rendered by `scripts/make-ocr-sample.py`) carries a heading,
+a few lines of running text and a line with digits; the Japanese, Chinese and Korean pages also
+carry two vertical columns, read with `vertical: true`. "Lines" counts lines read exactly;
+"chars" is the character accuracy over the page (edit distance per line). Results are from the
+XNNPACK export, identical on the iOS simulator and the Android emulator.
+
+| Alphabet | Lines | Chars | What goes wrong                                                      |
+| -------- | ----- | ----- | -------------------------------------------------------------------- |
+| English  | 7/11  | 97.8% | `snall`, `tlat`, `!` as `l`, a dropped period and a dropped space    |
+| Cyrillic | 2/7   | 95.5% | `ра` as Latin `pa`, `и` as `ӏ`, `л` as `Jт`, `₽` as `П`, `ї` as `і`  |
+| Latin    | 3/6   | 94.2% | `Ç` as `C`, `ö` as `Ö`, `,` as `;`, `M` as `^A`, a dropped period    |
+| Japanese | 8/8   | 100%  | nothing, vertical columns included                                   |
+| Chinese  | 0/8   | 77.6% | common characters dropped outright (文 字 京 国 了 顾 春), see below |
+| Korean   | 6/8   | 94.4% | `뛰어넘는다` as `뒤어넘논다`, `을` as `올`, a dropped space          |
+| Telugu   | 5/6   | 99.0% | one dropped space                                                    |
+| Kannada  | 2/6   | 96.1% | `ಠ` as `7`, a dropped conjunct, a doubled space and a doubled virama |
+
+For Latin text prefer PP-OCRv6: its fp32 export read every line of the English page exactly where
+the int8 EasyOCR English model read about 98% of the characters. The simplified Chinese export
+never emits some common characters (the recognizer's blank wins those timesteps on two different
+fonts, horizontally and vertically) while it reads the rest of the line correctly; that is a
+defect of the int8 export being reported to the exporters, not something this package can
+correct. The other alphabets' misses are the usual int8 CRNN substitutions.
+
+## Known issue: the Vulkan exports
 
 `models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` resolves to the Vulkan export on Android, and loading
 it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
@@ -151,31 +227,21 @@ package; use `PP_DOCLAYOUT.XNNPACK` on Android. The PaddleHelpers Vulkan export
 (`models.documentModels.PP_HELPERS.VULKAN`, the Android `DEFAULT`) crashes at load on the S23
 exactly like PP-OCRv6's; use `PP_HELPERS.XNNPACK` on Android until the fix ships.
 
-## Requirements
+## API reference
 
-- `react-native-executorch` 0.10.2 or newer, installed alongside this package.
-- The app must opt into react-native-executorch's `ocr` feature so OpenCV is downloaded for both
-  packages:
-
-```json
-{
-  "react-native-executorch": {
-    "features": ["ocr"]
-  }
-}
-```
-
-- iOS 17+, Android API 26+, the New Architecture, `react-native-worklets` 0.10 to 0.12.
+The full API reference, generated from the source, is at
+[software-mansion-labs.github.io/react-native-ocr](https://software-mansion-labs.github.io/react-native-ocr/).
 
 ## Example app
 
-`example/` is an Expo app with four screens: **PaddleOCR parity** reads a bundled page with
-this package and with react-native-executorch's own pipeline on the same export and compares
-the results line by line; **EasyOCR + vertical text** reads the same page or a vertical-text page
-with EasyOCR English and grades the result against the text the page was rendered with (it can
-also save the raw CRAFT heatmap as a fixture for the native parity test); **Vulkan diagnostics**
-(Android) loads Vulkan exports one at a time to attribute a crash; **Native spike** self-tests the
-native module.
+`example/` is an Expo app with a screen per feature: **PaddleOCR parity** reads a bundled page
+with this package and with react-native-executorch's own pipeline on the same export and compares
+the results line by line; **EasyOCR + vertical text** reads the English pages and one page per
+alphabet, with the vertical pass, and grades the result against the text the page was rendered
+with (it can also save the raw CRAFT heatmap as a fixture for the native parity test); **Layout**
+reads a paper-like page region by region; **Document helpers** runs orientation, dewarp and table
+structure on bundled pages or a photo from the camera; **Vulkan diagnostics** (Android) loads
+Vulkan exports one at a time to attribute a crash; **Native spike** self-tests the native module.
 
 ## Development
 
@@ -184,9 +250,11 @@ yarn install
 yarn example ios       # or: yarn example android
 yarn typecheck && yarn lint && yarn test
 yarn test:native       # GoogleTest suites for the C++ kernels, against the host OpenCV
+yarn docs              # the API reference, into docs/
 ```
 
-See `CONTRIBUTING.md` for the repository layout and the native build.
+See `CONTRIBUTING.md` for the repository layout, the native build, the sample pages and the
+release process.
 
 ## License
 
