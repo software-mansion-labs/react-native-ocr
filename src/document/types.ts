@@ -36,9 +36,9 @@ export type DocumentModelsConfig = {
   /**
    * Decline the dewarp when it keeps less than this fraction of the source
    * image variance: a bad grid can collapse a page without clear borders to
-   * near-blank, which keeps close to none, while a page photographed on a
-   * dark background keeps about a third once the background is cropped away.
-   * Default 0.1; lower is more permissive.
+   * near-blank, which keeps close to none. Default 0.5; lower is more
+   * permissive. A page photographed on a dark background keeps only about a
+   * third once the background is cropped away, so set about 0.1 for photos.
    */
   readonly dewarpMinVarianceRatio?: number;
   /** Table structure recognition; omit to disable it. */

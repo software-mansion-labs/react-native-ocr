@@ -106,8 +106,10 @@ for (const block of blocks) {
 `orientation` classifies the page's rotation (0, 90, 180 or 270 degrees) and turns it upright
 when the classifier is at least `orientationMinConfidence` sure (default 0.85), then `dewarp`
 flattens a curled or photographed page through the predicted UVDoc sampling grid, declining the
-warp when it would wipe out the page's variance (`dewarpMinVarianceRatio`, default 0.1: a
-collapsed page keeps close to none, a page photographed on a dark table keeps about a third). Both are off unless the config or the run turns them on; the result's `image` is the
+warp when it would wipe out most of the page's variance (`dewarpMinVarianceRatio`, default
+0.5). A page photographed on a dark background keeps only about a third of its variance once
+the background is cropped away, so set the ratio to about 0.1 for photos (the example's curved
+page does); a collapsed page keeps close to none. Both are off unless the config or the run turns them on; the result's `image` is the
 corrected frame, and every coordinate refers to it. With a `layout` model, each `table` region
 is also run through the SLANet structure decoder and its lines are placed into the recognized
 `<tr>`/`<td>` skeleton by nearest row and column centre (`fillTableCells`, also exported for

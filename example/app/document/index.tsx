@@ -77,6 +77,8 @@ const SAMPLES: { key: SampleKey; title: string; stages: Stages }[] = [
   },
 ];
 const PHOTO_STAGES: Stages = { orientation: true, dewarp: true, layout: true, tables: true };
+/** `dewarpMinVarianceRatio` for photos: the flattened page keeps about a third. */
+const PHOTO_DEWARP_RATIO = 0.1;
 
 const REGION_COLORS = new Map<string, string>([
   ['doc_title', '#d81b60'],
@@ -181,7 +183,9 @@ export default function DocumentScreen() {
 
   // `/document?sample=table&backend=COREML&orientation=1&dewarp=0&layout=1&tables=1`
   // opens the screen in that state; a stage left out keeps the sample's default.
-  // `dewarpRatio` overrides `dewarpMinVarianceRatio` (0 accepts every warp).
+  // `dewarpRatio` overrides `dewarpMinVarianceRatio` (0 accepts every warp);
+  // the curved page defaults to 0.1, since the flattened page keeps only about
+  // a third of the variance of the photo once the dark table is cropped away.
   const params = useLocalSearchParams<{
     sample?: string;
     backend?: string;
@@ -217,7 +221,12 @@ export default function DocumentScreen() {
 
   // Orientation, dewarp and tables are per-run options, so toggling them does
   // not reload; the layout model is part of the config, so it does.
-  const dewarpRatio = params.dewarpRatio === undefined ? undefined : Number(params.dewarpRatio);
+  const dewarpRatio =
+    params.dewarpRatio !== undefined
+      ? Number(params.dewarpRatio)
+      : sample === 'curved' || sample === 'photo'
+        ? PHOTO_DEWARP_RATIO
+        : undefined;
   const config = useMemo<OcrModel<DocLayoutLabel>>(
     () => ({
       ...models.ocr.PADDLE.PPOCRV6_SMALL[backend],
@@ -231,7 +240,7 @@ export default function DocumentScreen() {
   );
   const { isReady, error, downloadProgress, runOcr } = useOcr<DocLayoutLabel>(config);
 
-  const setup = `${backend} ${sample} ${describeStages(stages)}`;
+  const setup = `${backend} ${sample} ${describeStages(stages)} dewarpRatio=${dewarpRatio ?? 'default'}`;
   useEffect(() => {
     console.log(`[rnocr-document] ${Platform.OS} ${setup} loading`);
     // eslint-disable-next-line react-hooks/exhaustive-deps

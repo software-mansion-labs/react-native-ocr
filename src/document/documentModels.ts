@@ -116,10 +116,11 @@ function detectPageOrientation(
 // Default for DocumentModelsConfig.dewarpMinVarianceRatio: a grid estimated on
 // a page without clear borders can collapse the output to near-blank, so the
 // warp is declined when it keeps less than this fraction of the source
-// variance. A collapsed page keeps close to none; a page photographed on a
-// dark table keeps about a third once the table is cropped away (the example's
-// curved page: 0.35), which the reference's 0.5 wrongly declined.
-const DEFAULT_DEWARP_MIN_VARIANCE_RATIO = 0.1;
+// variance. Note that a page photographed on a dark background keeps only
+// about a third once the background is cropped away (the example's curved
+// page: 0.35), so such photos need a lower ratio; the default is kept at the
+// reference's value.
+const DEFAULT_DEWARP_MIN_VARIANCE_RATIO = 0.5;
 const VARIANCE_SAMPLE_STRIDE = 31;
 
 /**
