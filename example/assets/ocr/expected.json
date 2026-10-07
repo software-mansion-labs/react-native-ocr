@@ -43,5 +43,55 @@
     "block keeps the label and the",
     "confidence the detector gave it.",
     "Preprint, October 2026"
-  ]
+  ],
+  "rotated": [
+    "Parity check 2026",
+    "The quick brown fox",
+    "jumps over the lazy dog",
+    "while 12 geese watch",
+    "from the river bank.",
+    "Invoice no. 40713",
+    "Total: 1,284.50 EUR",
+    "Due: 14 October",
+    "Thank you!",
+    "This single line of small type runs across the whole page so that it is far wider than the widest input the recognizer accepts",
+    "Rotated lines keep their angle."
+  ],
+  "curved": [
+    "Parity check 2026",
+    "The quick brown fox",
+    "jumps over the lazy dog",
+    "while 12 geese watch",
+    "from the river bank.",
+    "Invoice no. 40713",
+    "Total: 1,284.50 EUR",
+    "Due: 14 October",
+    "Thank you!",
+    "This single line of small type runs across the whole page so that it is far wider than the widest input the recognizer accepts",
+    "Rotated lines keep their angle."
+  ],
+  "table": [
+    "Quarterly stock count",
+    "Item",
+    "Qty",
+    "Unit price",
+    "Total",
+    "Paper, A4",
+    "12",
+    "4.20",
+    "50.40",
+    "Toner",
+    "2",
+    "61.00",
+    "122.00",
+    "Stapler",
+    "1",
+    "9.90",
+    "9.90",
+    "Envelopes",
+    "30",
+    "0.15",
+    "4.50"
+  ],
+  "tableShape": [5, 4]
 }

@@ -15,14 +15,23 @@
   abstract, two body columns with section headings, a figure and its caption,
   so that the layout detector has regions of several classes to find and the
   blocks come out in column order.
+- example/assets/ocr/rotated.png: `sample.png` turned 90 degrees clockwise,
+  for the Document screen's orientation toggle.
+- example/assets/ocr/curved.png: `sample.png` as a phone would photograph it
+  lying curled on a dark table (bowed lines, shaded, with a border around the
+  page), for the Document screen's dewarp toggle.
+- example/assets/ocr/table.png: a page with a title and a ruled table, for
+  the Document screen's table structure.
 - example/assets/ocr/expected.json: the lines each page carries, so a screen
-  can grade what it read.
+  can grade what it read, plus the table's row and column counts.
 
-Needs Pillow and the macOS system fonts.
+Needs Pillow, NumPy and the macOS system fonts.
 """
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 ASSETS = Path(__file__).resolve().parent.parent / "example" / "assets" / "ocr"
@@ -190,7 +199,105 @@ def render_layout() -> list[str]:
     return lines
 
 
+def render_rotated() -> None:
+    """Turns the sample page 90 degrees clockwise (PIL's ROTATE_270 is counter-clockwise)."""
+    page = Image.open(ASSETS / "sample.png").transpose(Image.Transpose.ROTATE_270)
+    page.save(ASSETS / "rotated.png", optimize=True)
+    print(f"wrote {ASSETS / 'rotated.png'} {page.size}")
+
+
+def render_curved() -> None:
+    """Photographs the sample page, so to speak: scaled down onto a dark table with a
+    sinusoidal curl (every column shifted down by a bow that peaks mid-page), a brightness
+    roll-off towards the curled edge and a soft shadow, so the page has borders a dewarping
+    model can find and text lines that are visibly bent."""
+    src = np.asarray(Image.open(ASSETS / "sample.png").convert("RGB"), dtype=np.float32)
+    src_h, src_w = src.shape[:2]
+    out_w, out_h = 900, 700
+    scale = 0.84
+    x0, y0 = 60, 80
+    bow = 46.0  # px of downward shift at the middle of the page
+
+    # Inverse map: for every output pixel, where in the page it comes from.
+    ys, xs = np.mgrid[0:out_h, 0:out_w].astype(np.float32)
+    u = (xs - x0) / scale
+    v = (ys - y0 - bow * np.sin(np.pi * np.clip(u, 0, src_w) / src_w)) / scale
+    inside = (u >= 0) & (u < src_w - 1) & (v >= 0) & (v < src_h - 1)
+    uc = np.clip(u, 0, src_w - 1.001)
+    vc = np.clip(v, 0, src_h - 1.001)
+    ui, vi = np.floor(uc).astype(int), np.floor(vc).astype(int)
+    fu, fv = (uc - ui)[..., None], (vc - vi)[..., None]
+    page = (
+        src[vi, ui] * (1 - fu) * (1 - fv)
+        + src[vi, ui + 1] * fu * (1 - fv)
+        + src[vi + 1, ui] * (1 - fu) * fv
+        + src[vi + 1, ui + 1] * fu * fv
+    )
+    # Shade the page as if lit from the left, darker towards the curled right edge.
+    shade = (0.72 + 0.28 * np.cos(np.pi * np.clip(u, 0, src_w) / src_w / 2))[..., None]
+    page *= shade
+
+    table = np.empty((out_h, out_w, 3), dtype=np.float32)
+    table[...] = (74, 70, 66)
+    table += (ys / out_h * 18)[..., None]  # a little lighter towards the bottom
+    shadow = np.roll(inside, (10, 12), axis=(0, 1))
+    table[shadow] *= 0.6
+    out = np.where(inside[..., None], page, table)
+    Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).save(ASSETS / "curved.png", optimize=True)
+    print(f"wrote {ASSETS / 'curved.png'} {(out_w, out_h)}")
+
+
+TABLE_ROWS = [
+    ["Item", "Qty", "Unit price", "Total"],
+    ["Paper, A4", "12", "4.20", "50.40"],
+    ["Toner", "2", "61.00", "122.00"],
+    ["Stapler", "1", "9.90", "9.90"],
+    ["Envelopes", "30", "0.15", "4.50"],
+]
+
+
+def render_table() -> tuple[list[str], list[int]]:
+    page = Image.new("RGB", (800, 600), "white")
+    draw = ImageDraw.Draw(page)
+    title = "Quarterly stock count"
+    draw.text((60, 40), title, font=font(34), fill="black")
+    lines = [title]
+
+    x0, y0, x1, y1 = 60, 120, 740, 480
+    cols = [x0, 320, 440, 590, x1]
+    rows = [y0 + i * (y1 - y0) // len(TABLE_ROWS) for i in range(len(TABLE_ROWS) + 1)]
+    draw.rectangle((x0, rows[0], x1, rows[1]), fill=(232, 236, 242))
+    for x in cols:
+        draw.line((x, y0, x, y1), fill="black", width=2)
+    for y in rows:
+        draw.line((x0, y, x1, y), fill="black", width=2)
+    f = font(22)
+    for r, row in enumerate(TABLE_ROWS):
+        for c, text in enumerate(row):
+            box = draw.textbbox((0, 0), text, font=f)
+            cx = (cols[c] + cols[c + 1]) / 2 - (box[2] - box[0]) / 2
+            cy = (rows[r] + rows[r + 1]) / 2 - (box[3] - box[1]) / 2 - box[1]
+            draw.text((cx, cy), text, font=f, fill="black")
+            lines.append(text)
+
+    page.save(ASSETS / "table.png", optimize=True)
+    print(f"wrote {ASSETS / 'table.png'} {page.size}")
+    return lines, [len(TABLE_ROWS), len(TABLE_ROWS[0])]
+
+
 ASSETS.mkdir(parents=True, exist_ok=True)
-expected = {"sample": render_sample(), "vertical": render_vertical(), "layout": render_layout()}
+sample = render_sample()
+render_rotated()
+render_curved()
+table, table_shape = render_table()
+expected = {
+    "sample": sample,
+    "vertical": render_vertical(),
+    "layout": render_layout(),
+    "rotated": sample,
+    "curved": sample,
+    "table": table,
+    "tableShape": table_shape,
+}
 (ASSETS / "expected.json").write_text(json.dumps(expected, indent=2) + "\n")
 print(f"wrote {ASSETS / 'expected.json'}")
