@@ -87,8 +87,13 @@ function editDistance(a: string, b: string): number {
 
 /**
  * Grades order-independently: each expected line matches one read line
- * exactly, and the character accuracy is taken over the texts sorted and
- * joined, which forgives line splits and reading-order differences.
+ * exactly, the remaining expected lines pair with the closest remaining read
+ * lines (smallest edit distance first), and a read line left over joins the
+ * paired line it extends with the fewest errors, which forgives a line the
+ * detector split in two. The character accuracy is 1 minus the paired edit
+ * distances (an unpaired expected line counts in full) over the expected
+ * length; read lines that pair with nothing are reported as extras and do
+ * not count against it.
  */
 function grade(read: readonly string[], lines: readonly string[]): Grade {
   const pool = [...read];
@@ -98,10 +103,39 @@ function grade(read: readonly string[], lines: readonly string[]): Grade {
     if (at === -1) missing.push(line);
     else pool.splice(at, 1);
   }
-  const joined = (texts: readonly string[]) => [...texts].sort().join(' ');
-  const want = joined(lines);
-  const charAccuracy = Math.max(0, 1 - editDistance(joined(read), want) / want.length);
-  return { found: lines.length - missing.length, missing, extra: pool, charAccuracy };
+  const candidates = missing
+    .flatMap((line, i) => pool.map((text, j) => ({ i, j, d: editDistance(text, line) })))
+    .sort((a, b) => a.d - b.d);
+  const paired = new Map<number, string>();
+  const used = new Set<number>();
+  for (const { i, j } of candidates) {
+    if (paired.has(i) || used.has(j)) continue;
+    paired.set(i, pool[j]!);
+    used.add(j);
+  }
+  const extra = pool.filter((_, j) => !used.has(j));
+  for (const text of [...extra]) {
+    let best: { i: number; joined: string; gain: number } | undefined;
+    for (const [i, current] of paired) {
+      const want = missing[i]!;
+      for (const joined of [`${current} ${text}`, `${text} ${current}`]) {
+        const gain = editDistance(current, want) - editDistance(joined, want);
+        if (gain > 0 && (!best || gain > best.gain)) best = { i, joined, gain };
+      }
+    }
+    if (best) {
+      paired.set(best.i, best.joined);
+      extra.splice(extra.indexOf(text), 1);
+    }
+  }
+  let errors = 0;
+  missing.forEach((line, i) => {
+    const text = paired.get(i);
+    errors += text === undefined ? line.length : editDistance(text, line);
+  });
+  const total = lines.reduce((n, line) => n + line.length, 0);
+  const charAccuracy = Math.max(0, 1 - errors / total);
+  return { found: lines.length - missing.length, missing, extra, charAccuracy };
 }
 
 type Outcome = {

@@ -45,6 +45,7 @@ export function coveredFraction(inner: BoundingBox<'xyxy'>, outer: BoundingBox<'
  * Drops layout regions already covered by a larger kept one, largest first.
  * Visual regions never swallow anything: a caption inside a figure is still
  * text to read.
+ * @category Functions
  * @param regions The layout detector's regions.
  * @param visualLabels Labels carrying no text, which never suppress another region.
  * @returns The surviving regions, in the detector's original order.
