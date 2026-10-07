@@ -49,11 +49,15 @@ Requirements:
 
 - `react-native-executorch` 0.10.2 or newer, installed alongside this package, and
   `react-native-worklets` 0.10 to 0.12.
-- iOS 17+, Android API 26+, the New Architecture. The package has native code, so an Expo app
-  needs a development build (`expo run:ios` / `expo run:android`), not Expo Go; bare apps run
-  `pod install` after installing.
+- iOS 17+, Android API 26+, the New Architecture. react-native-executorch's pods require an iOS
+  deployment target of 17.0, which is above the default of a fresh app: in an Expo app set it
+  through `expo-build-properties` (`"ios": { "deploymentTarget": "17.0" }`), in a bare app in the
+  `Podfile` (`platform :ios, '17.0'`), or `pod install` stops with "required a higher minimum
+  deployment target".
+- The package has native code, so an Expo app needs a development build (`expo run:ios` /
+  `expo run:android`), not Expo Go; bare apps run `pod install` after installing.
 - The app must opt into react-native-executorch's `ocr` feature so OpenCV is downloaded for both
-  packages:
+  packages, in the app's `package.json`:
 
 ```json
 {
