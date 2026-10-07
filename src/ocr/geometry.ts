@@ -271,11 +271,11 @@ export function boxToQuad(b: Box): Quad {
 const COLUMN_GAP_FRACTION = 0.06;
 const LINE_OVERLAP_FRACTION = 0.3;
 // A blank band must be at least this many times the smallest item height tall
-// to split a page into a top and a bottom part (`orderByXyCut`): one blank
-// line's worth, more than the gap between a heading and its paragraph.
+// to split a page into a top and a bottom part: one blank line's worth, more
+// than the gap between a heading and its paragraph.
 const ROW_GAP_HEIGHTS = 1;
 // Items at least this fraction of the content width are left out when looking
-// for a gutter that spanning items hide (`orderByXyCut`).
+// for a gutter that spanning items hide.
 const WIDE_FRACTION = 0.5;
 
 type Bounds = {
@@ -358,97 +358,31 @@ function orderColumn(boxes: readonly Bounds[], column: number[]): number[] {
 }
 
 /**
- * Reorders `{ quad }` items the way a person reads the page: leftmost column
- * first (top to bottom), then the next column. Detectors emit boxes in
- * arbitrary order, so detections are ordered through this.
+ * Reorders `{ quad }` items the way a person reads the page, by recursive
+ * cuts. A part is split at the widest column gutter no item crosses (left
+ * before right). When some items cross the gutter (a title, an abstract, a
+ * wide heading), the gutter is looked for among the items narrower than half
+ * the content, and the crossing items divide the part into bands read top to
+ * bottom, each band split again. Failing both, the part is split at the
+ * widest blank band (top before bottom), which separates a footer sitting in
+ * the gutter from the columns above it. What cannot be split is read as one
+ * column: lines top to bottom, boxes within a line left to right. Detectors
+ * emit boxes in arbitrary order, so detections, blocks and the lines of a
+ * block are all ordered through this.
  *
- * Columns are the gaps in the x projection of all boxes, so a line that spans
- * the page (a title, a wide heading) hides the gutter below it and the
- * columns under it interleave; {@link orderByXyCut} handles that for layout
- * blocks. This is the order react-native-executorch's PaddleOCR task returns.
+ * A gutter must be {@link COLUMN_GAP_FRACTION} of the content width; a blank
+ * band must be as tall as the smallest item (one line of the smallest text),
+ * so ordinary line spacing and the gap under a heading never split.
+ *
+ * This departs from react-native-executorch's PaddleOCR task, whose single
+ * gutter sweep over the x projection of all boxes interleaves the columns of
+ * a page whose title or footer spans them.
  * @typeParam T The item type; anything carrying a `quad`.
  * @param items The items to order.
  * @returns The same items in reading order (the input array itself when it
  * holds at most one item).
  */
 export function orderByReadingOrder<T extends { readonly quad: Quad }>(items: T[]): T[] {
-  'worklet';
-  const count = items.length;
-  if (count <= 1) {
-    return items;
-  }
-
-  const boxes = items.map((it) => boundingBoxOfPoints(it.quad, 'xyxy'));
-
-  // Column gutters: x ranges no box covers, wide enough relative to the
-  // content width. A full sweep of the x axis finds every gutter at once.
-  let minX = Infinity;
-  let maxX = -Infinity;
-  for (const box of boxes) {
-    if (box.xmin < minX) minX = box.xmin;
-    if (box.xmax > maxX) maxX = box.xmax;
-  }
-  const minGap = COLUMN_GAP_FRACTION * Math.max(1, maxX - minX);
-
-  const edges: { x: number; delta: number }[] = [];
-  for (const box of boxes) {
-    edges.push({ x: box.xmin, delta: 1 });
-    edges.push({ x: box.xmax, delta: -1 });
-  }
-  edges.sort((a, b) => a.x - b.x || b.delta - a.delta);
-  const cuts: number[] = [];
-  let coverage = 0;
-  let gutterStart = edges.length > 0 ? edges[0]!.x : 0;
-  for (const edge of edges) {
-    const before = coverage;
-    coverage += edge.delta;
-    if (before > 0 && coverage === 0) {
-      gutterStart = edge.x;
-    } else if (before === 0 && coverage > 0 && edge.x - gutterStart >= minGap) {
-      cuts.push((gutterStart + edge.x) / 2);
-    }
-  }
-
-  // A box belongs to column k when exactly k cuts lie left of its center.
-  const columns: number[][] = Array.from({ length: cuts.length + 1 }, () => []);
-  for (let i = 0; i < count; i++) {
-    const centerX = (boxes[i]!.xmin + boxes[i]!.xmax) / 2;
-    let column = 0;
-    for (const cut of cuts) {
-      if (centerX > cut) column++;
-    }
-    columns[column]!.push(i);
-  }
-
-  const order: number[] = [];
-  for (const column of columns) {
-    order.push(...orderColumn(boxes, column));
-  }
-  return order.map((i) => items[i]!);
-}
-
-/**
- * Reorders `{ quad }` items the way a person reads a page with spanning
- * elements, by recursive cuts. A part is split at the widest column gutter
- * no item crosses (left before right). When some items cross the gutter (a
- * title, an abstract, a wide heading), the gutter is looked for among the
- * items narrower than half the content, and the crossing items divide the
- * part into bands read top to bottom, each band split again. Failing both,
- * the part is split at the widest blank band (top before bottom), which
- * separates a footer sitting in the gutter from the columns above it. What
- * cannot be split is read as one column. Unlike {@link orderByReadingOrder},
- * the columns under a title therefore still read left column first. Used
- * for layout blocks.
- *
- * A gutter must be {@link COLUMN_GAP_FRACTION} of the content width; a blank
- * band must be as tall as the smallest item (one line of the smallest text),
- * so ordinary line spacing and the gap under a heading never split.
- * @typeParam T The item type; anything carrying a `quad`.
- * @param items The items to order.
- * @returns The same items in reading order (the input array itself when it
- * holds at most one item).
- */
-export function orderByXyCut<T extends { readonly quad: Quad }>(items: T[]): T[] {
   'worklet';
   if (items.length <= 1) {
     return items;

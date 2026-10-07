@@ -5,7 +5,6 @@ import {
   groupBoxes,
   groupVerticalStacks,
   orderByReadingOrder,
-  orderByXyCut,
 } from '../../src/ocr/geometry';
 
 const box = (x0: number, y0: number, x1: number, y1: number, angle = 0): CraftBox => ({
@@ -131,6 +130,23 @@ describe('orderByReadingOrder', () => {
   });
   const names = (items: { name: string }[]) => items.map((it) => it.name);
 
+  // A paper-like page: title and abstract across both columns, two body
+  // columns with headings, a centered footer. Heights are about 25 px.
+  const page = [
+    item('footer', 317, 1038, 483, 1058),
+    item('right text', 416, 368, 674, 532),
+    item('2 Method', 417, 327, 524, 354),
+    item('left text 2', 55, 677, 325, 785),
+    item('abstract', 56, 206, 659, 288),
+    item('3 Results', 56, 637, 162, 663),
+    item('left text 1', 55, 367, 327, 589),
+    item('1 Introduction', 58, 328, 209, 355),
+    item('caption', 417, 772, 686, 795),
+    item('authors', 236, 107, 564, 132),
+    item('Abstract', 57, 167, 153, 194),
+    item('title', 129, 46, 669, 90),
+  ];
+
   it('returns the input array itself for one item or none', () => {
     const empty: { quad: cv.Quad }[] = [];
     expect(orderByReadingOrder(empty)).toBe(empty);
@@ -138,16 +154,51 @@ describe('orderByReadingOrder', () => {
     expect(orderByReadingOrder(single)).toBe(single);
   });
 
-  it('orders words within a line left to right and lines top to bottom', () => {
+  it('reads the columns under a spanning title one after the other', () => {
+    expect(names(orderByReadingOrder(page))).toEqual([
+      'title',
+      'authors',
+      'Abstract',
+      'abstract',
+      '1 Introduction',
+      'left text 1',
+      '3 Results',
+      'left text 2',
+      '2 Method',
+      'right text',
+      'caption',
+      'footer',
+    ]);
+  });
+
+  it('keeps a single column with short headings in top-to-bottom order', () => {
+    // The short headings and the centered footer leave an x gap between them
+    // that is not a gutter: the paragraphs crossing it are the bands.
     const items = [
-      item('C1', 110, 0, 160, 20),
-      item('B2', 55, 30, 105, 50),
-      item('A1', 0, 0, 50, 20),
-      item('A2', 0, 30, 50, 50),
-      item('B1', 55, 0, 105, 20),
-      item('C2', 110, 30, 160, 50),
+      item('footer', 300, 500, 400, 520),
+      item('para 2', 0, 300, 700, 450),
+      item('heading 2', 0, 260, 90, 285),
+      item('para 1', 0, 60, 700, 220),
+      item('heading 1', 0, 20, 100, 45),
     ];
-    expect(names(orderByReadingOrder(items))).toEqual(['A1', 'B1', 'C1', 'A2', 'B2', 'C2']);
+    expect(names(orderByReadingOrder(items))).toEqual([
+      'heading 1',
+      'para 1',
+      'heading 2',
+      'para 2',
+      'footer',
+    ]);
+  });
+
+  it('separates a footer sitting in the gutter from the columns above it', () => {
+    const items = [
+      item('footer', 90, 300, 210, 320),
+      item('R1', 200, 0, 300, 100),
+      item('L2', 0, 120, 100, 220),
+      item('R2', 200, 120, 300, 220),
+      item('L1', 0, 0, 100, 100),
+    ];
+    expect(names(orderByReadingOrder(items))).toEqual(['L1', 'L2', 'R1', 'R2', 'footer']);
   });
 
   it('reads the left column before the right one', () => {
@@ -173,103 +224,6 @@ describe('orderByReadingOrder', () => {
     const items = [item('b', 500, 30, 600, 50), item('a', 500, 0, 600, 20)];
     expect(names(orderByReadingOrder(items))).toEqual(['a', 'b']);
   });
-});
-
-describe('orderByXyCut', () => {
-  const item = (name: string, x0: number, y0: number, x1: number, y1: number) => ({
-    name,
-    quad: rect(x0, y0, x1, y1),
-  });
-  const names = (items: { name: string }[]) => items.map((it) => it.name);
-
-  // A paper-like page: title and abstract across both columns, two body
-  // columns with headings, a centered footer. Heights are about 25 px.
-  const page = [
-    item('footer', 317, 1038, 483, 1058),
-    item('right text', 416, 368, 674, 532),
-    item('2 Method', 417, 327, 524, 354),
-    item('left text 2', 55, 677, 325, 785),
-    item('abstract', 56, 206, 659, 288),
-    item('3 Results', 56, 637, 162, 663),
-    item('left text 1', 55, 367, 327, 589),
-    item('1 Introduction', 58, 328, 209, 355),
-    item('caption', 417, 772, 686, 795),
-    item('authors', 236, 107, 564, 132),
-    item('Abstract', 57, 167, 153, 194),
-    item('title', 129, 46, 669, 90),
-  ];
-
-  it('returns the input array itself for one item or none', () => {
-    const empty: { quad: cv.Quad }[] = [];
-    expect(orderByXyCut(empty)).toBe(empty);
-    const single = [item('a', 0, 0, 10, 10)];
-    expect(orderByXyCut(single)).toBe(single);
-  });
-
-  it('reads the columns under a spanning title one after the other', () => {
-    expect(names(orderByXyCut(page))).toEqual([
-      'title',
-      'authors',
-      'Abstract',
-      'abstract',
-      '1 Introduction',
-      'left text 1',
-      '3 Results',
-      'left text 2',
-      '2 Method',
-      'right text',
-      'caption',
-      'footer',
-    ]);
-    // The gutter sweep alone interleaves the two columns on this page.
-    expect(names(orderByReadingOrder(page)).slice(4, 8)).toEqual([
-      '1 Introduction',
-      '2 Method',
-      'left text 1',
-      'right text',
-    ]);
-  });
-
-  it('keeps a single column with short headings in top-to-bottom order', () => {
-    // The short headings and the centered footer leave an x gap between them
-    // that is not a gutter: the paragraphs crossing it are the bands.
-    const items = [
-      item('footer', 300, 500, 400, 520),
-      item('para 2', 0, 300, 700, 450),
-      item('heading 2', 0, 260, 90, 285),
-      item('para 1', 0, 60, 700, 220),
-      item('heading 1', 0, 20, 100, 45),
-    ];
-    expect(names(orderByXyCut(items))).toEqual([
-      'heading 1',
-      'para 1',
-      'heading 2',
-      'para 2',
-      'footer',
-    ]);
-  });
-
-  it('separates a footer sitting in the gutter from the columns above it', () => {
-    const items = [
-      item('footer', 90, 300, 210, 320),
-      item('R1', 200, 0, 300, 100),
-      item('L2', 0, 120, 100, 220),
-      item('R2', 200, 120, 300, 220),
-      item('L1', 0, 0, 100, 100),
-    ];
-    expect(names(orderByXyCut(items))).toEqual(['L1', 'L2', 'R1', 'R2', 'footer']);
-  });
-
-  it('agrees with the gutter sweep on a plain two-column page', () => {
-    const items = [
-      item('R1', 200, 0, 300, 20),
-      item('L2', 0, 30, 100, 50),
-      item('R2', 200, 30, 300, 50),
-      item('L1', 0, 0, 100, 20),
-    ];
-    expect(names(orderByXyCut(items))).toEqual(['L1', 'L2', 'R1', 'R2']);
-    expect(names(orderByXyCut(items))).toEqual(names(orderByReadingOrder(items)));
-  });
 
   it('does not split a column at its line spacing', () => {
     // Lines 20 px tall with 10 px between them, the lower ones shorter.
@@ -279,7 +233,7 @@ describe('orderByXyCut', () => {
       item('b', 0, 30, 200, 50),
       item('d', 0, 90, 60, 110),
     ];
-    expect(names(orderByXyCut(items))).toEqual(['a', 'b', 'c', 'd']);
+    expect(names(orderByReadingOrder(items))).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('reads words within a line left to right once no gap is wide enough', () => {
@@ -291,7 +245,7 @@ describe('orderByXyCut', () => {
       item('B1', 55, 0, 105, 20),
       item('C2', 110, 30, 160, 50),
     ];
-    expect(names(orderByXyCut(items))).toEqual(['A1', 'B1', 'C1', 'A2', 'B2', 'C2']);
+    expect(names(orderByReadingOrder(items))).toEqual(['A1', 'B1', 'C1', 'A2', 'B2', 'C2']);
   });
 });
 

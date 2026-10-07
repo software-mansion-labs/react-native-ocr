@@ -1,7 +1,8 @@
 /**
  * PaddleOCR parity: reads the same page with this package's `useOcr` and with
  * react-native-executorch's `useOpticalCharacterRecognizer`, both on the same
- * PP-OCRv6 export, and compares the two results line by line. The verdict is
+ * PP-OCRv6 export, and compares the two results line by line (paired by
+ * position, since the two pipelines order lines differently). The verdict is
  * the first thing on the screen so a screenshot alone records it.
  */
 import { Canvas, Image as SkiaImage, Path, Skia, useImage } from '@shopify/react-native-skia';
@@ -48,7 +49,13 @@ function quadDelta(a: Quad, b: Quad): number {
   return max;
 }
 
-/** Compares the two results position by position; both are in reading order. */
+/**
+ * Pairs each RNE line with the closest unmatched line of ours by quad
+ * distance and compares the pairs. The two pipelines order their results
+ * differently (this package reads the columns under a spanning line one
+ * after the other, RNE's gutter sweep interleaves them), so index-by-index
+ * would report order, not reading, differences.
+ */
 function compare(
   ours: Line[],
   theirs: Line[]
@@ -57,21 +64,33 @@ function compare(
   let sameText = 0;
   let maxQuadDelta = 0;
   let maxConfidenceDelta = 0;
-  const count = Math.max(ours.length, theirs.length);
-  for (let i = 0; i < count; i++) {
-    const a = ours[i];
-    const b = theirs[i];
-    if (!a || !b) {
-      differences.push(`#${i + 1} only in ${a ? 'ours' : 'RNE'}: "${(a ?? b)!.text}"`);
-      continue;
+  const unmatched = new Set(ours.map((_, i) => i));
+  theirs.forEach((b, i) => {
+    let best = -1;
+    let bestDelta = Infinity;
+    for (const j of unmatched) {
+      const delta = quadDelta(ours[j]!.quad, b.quad);
+      if (delta < bestDelta) {
+        best = j;
+        bestDelta = delta;
+      }
     }
+    if (best === -1) {
+      differences.push(`#${i + 1} only in RNE: "${b.text}"`);
+      return;
+    }
+    unmatched.delete(best);
+    const a = ours[best]!;
     if (a.text === b.text) {
       sameText++;
     } else {
       differences.push(`#${i + 1} ours "${a.text}" / RNE "${b.text}"`);
     }
-    maxQuadDelta = Math.max(maxQuadDelta, quadDelta(a.quad, b.quad));
+    maxQuadDelta = Math.max(maxQuadDelta, bestDelta);
     maxConfidenceDelta = Math.max(maxConfidenceDelta, Math.abs(a.confidence - b.confidence));
+  });
+  for (const j of unmatched) {
+    differences.push(`only in ours: "${ours[j]!.text}"`);
   }
   return { sameText, maxQuadDelta, maxConfidenceDelta, differences };
 }

@@ -62,7 +62,9 @@ calling worklet.
 
 A result carries `detections` (flat, in reading order), `blocks` (one `'ungrouped'` block
 without a layout model), `regions` (empty without one) and `image`, the frame the coordinates
-refer to.
+refer to. Reading order is found by recursive cuts at column gutters and blank bands, so the
+columns under a page-wide title still read left column first (react-native-executorch's PaddleOCR
+task interleaves them).
 
 ### Layout
 
@@ -82,8 +84,8 @@ With a `layout` model, PP-DocLayoutV3 (25 labels, `DOC_LAYOUT_LABELS`) finds the
 page, nested duplicates are merged (a region 80% inside a larger one is dropped, except that
 visual regions never swallow a caption), and every region that carries text is read on its own
 crop; the lines are returned in page coordinates. `blocks` has one block per region with text
-(`regionType`, `bbox`, `layoutConfidence`, `lines`, `text`), ordered by recursive XY cuts so the
-columns under a page-wide title still read left column first; `detections` follows the blocks.
+(`regionType`, `bbox`, `layoutConfidence`, `lines`, `text`) in reading order; `detections` follows
+the blocks.
 Regions labelled `image`, `chart` or `seal` are skipped (`visualLabels` on the config changes
 the list); a `table` region (`tableLabel`) always yields a block, flagged `isTable`, and will
 carry `tableHtml` once the document helpers land. Reading each region on its own crop costs one

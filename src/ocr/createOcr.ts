@@ -16,7 +16,7 @@ import type { WorkletRuntime } from 'react-native-worklets';
 import { RECOGNIZER_NORM, RECOGNIZER_PAD_VALUE } from '../constants';
 import { cropTensor } from '../native/ops';
 import { resolveOcrContract, runOcrPass, runOcrPassOnTensor, type OcrEngine } from './engine';
-import { orderByXyCut } from './geometry';
+import { orderByReadingOrder } from './geometry';
 import { FORMAT_CHANNELS } from './imageFormat';
 import {
   DEFAULT_TABLE_LABEL,
@@ -202,10 +202,9 @@ export async function createOcr<L = never>(
     } finally {
       tPage.dispose();
     }
-    // Blocks read in XY-cut order, which keeps the columns under a spanning
-    // title apart (the whole-page gutter sweep would interleave them), and
-    // the flat detections follow the blocks so the two views agree.
-    const orderedBlocks = orderByXyCut(
+    // The flat detections follow the ordered blocks, so the two views of the
+    // page agree.
+    const orderedBlocks = orderByReadingOrder(
       blocks.map((block) => ({ block, quad: quadFromBounds(block.bbox) }))
     ).map((w) => w.block);
     return {
