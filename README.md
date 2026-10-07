@@ -24,13 +24,16 @@ Advanced on-device OCR for React Native, built on top of
   `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
   public API.
 
+- Document layout with PP-DocLayoutV3 (`layout` on the model config): the page is split into
+  labelled regions, each region is read on its own crop, and the result carries the regions and
+  reading-ordered blocks.
+
 ## Planned
 
-- Document layout with PP-DocLayoutV3 and per-region OCR (`layout` on the model config).
 - Document helpers: page orientation, UVDoc dewarping and SLANet table structure
   (`documentModels` on the model config).
 
-`createOcr` rejects a config that sets `layout` or `documentModels` until those land.
+`createOcr` rejects a config that sets `documentModels` until it lands.
 
 ## Usage
 
@@ -57,9 +60,37 @@ or `gray`). Without React, `createOcr(config, runtime?)` returns `{ runOcr, runO
 dispose }`; `runOcr` resolves on a worklet runtime, `runOcrWorklet` runs synchronously on the
 calling worklet.
 
-A result carries `detections` (flat, in reading order), `blocks` (one `'ungrouped'` block until
-layout lands), `regions` (empty until layout lands) and `image`, the frame the coordinates refer
-to.
+A result carries `detections` (flat, in reading order), `blocks` (one `'ungrouped'` block
+without a layout model), `regions` (empty without one) and `image`, the frame the coordinates
+refer to. Reading order is found by recursive cuts at column gutters and blank bands, so the
+columns under a page-wide title still read left column first (react-native-executorch's PaddleOCR
+task interleaves them).
+
+### Layout
+
+```tsx
+const { isReady, runOcr } = useOcr<DocLayoutLabel>({
+  ...models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT,
+  layout: models.layoutDetection.PP_DOCLAYOUT.DEFAULT,
+});
+
+const { blocks, regions } = await runOcr!(image);
+for (const { regionType, layoutConfidence, text, bbox } of blocks) {
+  console.log(regionType, layoutConfidence, bbox, text);
+}
+```
+
+With a `layout` model, PP-DocLayoutV3 (25 labels, `DOC_LAYOUT_LABELS`) finds the regions of the
+page, nested duplicates are merged (a region 80% inside a larger one is dropped, except that
+visual regions never swallow a caption), and every region that carries text is read on its own
+crop; the lines are returned in page coordinates. `blocks` has one block per region with text
+(`regionType`, `bbox`, `layoutConfidence`, `lines`, `text`) in reading order; `detections` follows
+the blocks.
+Regions labelled `image`, `chart` or `seal` are skipped (`visualLabels` on the config changes
+the list); a `table` region (`tableLabel`) always yields a block, flagged `isTable`, and will
+carry `tableHtml` once the document helpers land. Reading each region on its own crop costs one
+detector pass per region: the example's paper-like page takes about 2 s with layout against
+0.8 s whole-page on the iOS simulator.
 
 ### Vertical text
 
@@ -88,7 +119,11 @@ ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The 
 made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
 no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android. The
 EasyOCR Vulkan exports load and run on a Galaxy S23 (they keep the recognizer on XNNPACK), but
-crash the Android emulator; use `XNNPACK` there.
+crash the Android emulator; use `XNNPACK` there. The PP-DocLayout Vulkan export
+(`models.layoutDetection.PP_DOCLAYOUT.VULKAN`, also the Android `DEFAULT`) loads on the S23 but
+fails at execute inside ExecuTorch's Vulkan backend (`Vulkan graph declares 3 inputs and 4
+outputs, but the delegate call supplied 8 arguments`), an export defect being fixed outside this
+package; use `PP_DOCLAYOUT.XNNPACK` on Android.
 
 ## Requirements
 

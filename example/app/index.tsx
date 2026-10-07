@@ -13,6 +13,7 @@ export default function Home() {
       <Text style={commonStyles.title}>react-native-ocr</Text>
       <Button title="PaddleOCR parity" onPress={() => router.push('/ocr')} />
       <Button title="EasyOCR + vertical text" onPress={() => router.push('/easyocr')} />
+      <Button title="Layout (PP-DocLayout)" onPress={() => router.push('/layout')} />
       {Platform.OS === 'android' && (
         <Button
           title="Vulkan diagnostics"

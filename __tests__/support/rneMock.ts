@@ -173,6 +173,62 @@ export function createResourceScope() {
   };
 }
 
+// --- createObjectDetector ----------------------------------------------------
+
+export type BoundingBox<F extends cv.BoxFormat> = cv.BoundingBox<F>;
+
+export type ObjectDetection<F extends cv.BoxFormat, L> = {
+  readonly box: BoundingBox<F>;
+  readonly label: L;
+  readonly confidence: number;
+};
+
+export type ObjectDetectorModel<F extends cv.BoxFormat, L> = {
+  readonly modelPath: string;
+  readonly modelOpts: { readonly labels: readonly L[]; readonly boxFormat: F };
+};
+
+export type ObjectDetector<F extends cv.BoxFormat, L> = {
+  readonly dispose: () => void;
+  readonly detectObjects: (input: cv.ImageBuffer) => Promise<ObjectDetection<F, L>[]>;
+  readonly detectObjectsWorklet: (input: cv.ImageBuffer) => ObjectDetection<F, L>[];
+};
+
+type FakeRegions = (input: cv.ImageBuffer) => ObjectDetection<cv.BoxFormat, unknown>[];
+let fakeRegions: FakeRegions | null = null;
+
+/**
+ * Sets what every fake object detector reports for an image; `null` restores
+ * the default (no regions). The detector's model still has to be registered
+ * with {@link setFakeModel} (any schema) so loading and disposal are tracked.
+ */
+export function setFakeLayoutRegions(regions: FakeRegions | null): void {
+  fakeRegions = regions;
+}
+
+/**
+ * Stands in for RNE's `createObjectDetector`: loads the model at the config's
+ * path (so a missing one fails with `LOAD_FAILED` and a loaded one counts in
+ * {@link modelTracker}) and answers with the regions set through
+ * {@link setFakeLayoutRegions}.
+ */
+export async function createObjectDetector<F extends cv.BoxFormat, L>(
+  config: ObjectDetectorModel<F, L>
+): Promise<ObjectDetector<F, L>> {
+  const model = loadModel(config.modelPath);
+  const detectObjectsWorklet = (input: cv.ImageBuffer): ObjectDetection<F, L>[] => {
+    if (model.disposed) {
+      throw RnExecuTorchError('RESOURCE_DISPOSED', `detectObjects: '${model.path}' was disposed`);
+    }
+    return (fakeRegions?.(input) ?? []) as ObjectDetection<F, L>[];
+  };
+  return {
+    dispose: () => model.dispose(),
+    detectObjects: wrapAsync(detectObjectsWorklet),
+    detectObjectsWorklet,
+  };
+}
+
 export const IMAGENET_NORM = {
   alpha: [1 / (255.0 * 0.229), 1 / (255.0 * 0.224), 1 / (255.0 * 0.225)],
   beta: [-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],

@@ -270,12 +270,113 @@ export function boxToQuad(b: Box): Quad {
 // least this fraction of the shorter box's height.
 const COLUMN_GAP_FRACTION = 0.06;
 const LINE_OVERLAP_FRACTION = 0.3;
+// A blank band must be at least this many times the smallest item height tall
+// to split a page into a top and a bottom part: one blank line's worth, more
+// than the gap between a heading and its paragraph.
+const ROW_GAP_HEIGHTS = 1;
+// Items at least this fraction of the content width are left out when looking
+// for a gutter that spanning items hide.
+const WIDE_FRACTION = 0.5;
+
+type Bounds = {
+  readonly xmin: number;
+  readonly ymin: number;
+  readonly xmax: number;
+  readonly ymax: number;
+};
+
+// Sweeps the boxes' extents along one axis and returns the midpoint of the
+// widest gap that no box covers and that is at least `minGap` wide, or `null`.
+function widestGap(
+  boxes: readonly Bounds[],
+  indices: readonly number[],
+  axis: 'x' | 'y',
+  minGap: number
+): { at: number; width: number } | null {
+  'worklet';
+  const edges: { at: number; delta: number }[] = [];
+  for (const i of indices) {
+    const box = boxes[i]!;
+    edges.push({ at: axis === 'x' ? box.xmin : box.ymin, delta: 1 });
+    edges.push({ at: axis === 'x' ? box.xmax : box.ymax, delta: -1 });
+  }
+  // Starts before ends at equal positions, so touching boxes leave no gap.
+  edges.sort((a, b) => a.at - b.at || b.delta - a.delta);
+  let best: { at: number; width: number } | null = null;
+  let coverage = 0;
+  // The margin before the first box is not a gap: the sweep starts on it.
+  let gapStart = edges.length > 0 ? edges[0]!.at : 0;
+  for (const edge of edges) {
+    const before = coverage;
+    coverage += edge.delta;
+    if (before > 0 && coverage === 0) {
+      gapStart = edge.at;
+    } else if (before === 0 && coverage > 0) {
+      const width = edge.at - gapStart;
+      if (width >= minGap && (best === null || width > best.width)) {
+        best = { at: (gapStart + edge.at) / 2, width };
+      }
+    }
+  }
+  return best;
+}
+
+// Orders boxes that form one column: boxes whose vertical extents overlap
+// enough sit on the same text line; lines go top to bottom and boxes within a
+// line left to right.
+function orderColumn(boxes: readonly Bounds[], column: number[]): number[] {
+  'worklet';
+  column.sort((a, b) => boxes[a]!.ymin - boxes[b]!.ymin);
+  const lines: { items: number[]; ymin: number; ymax: number }[] = [];
+  for (const i of column) {
+    const box = boxes[i]!;
+    let placed = false;
+    for (const line of lines) {
+      // Overlap is measured against the SHORTER of the two heights, so a
+      // small box beside a tall one still joins its line.
+      const overlap = Math.min(line.ymax, box.ymax) - Math.max(line.ymin, box.ymin);
+      const minHeight = Math.min(line.ymax - line.ymin, box.ymax - box.ymin);
+      if (overlap >= LINE_OVERLAP_FRACTION * Math.max(1, minHeight)) {
+        line.items.push(i);
+        line.ymin = Math.min(line.ymin, box.ymin);
+        line.ymax = Math.max(line.ymax, box.ymax);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      lines.push({ items: [i], ymin: box.ymin, ymax: box.ymax });
+    }
+  }
+  lines.sort((a, b) => a.ymin - b.ymin);
+  const order: number[] = [];
+  for (const line of lines) {
+    line.items.sort((a, b) => boxes[a]!.xmin + boxes[a]!.xmax - (boxes[b]!.xmin + boxes[b]!.xmax));
+    order.push(...line.items);
+  }
+  return order;
+}
 
 /**
- * Reorders `{ quad }` items the way a person reads the page: leftmost column
- * first (top to bottom), then the next column. Detectors emit boxes in
- * arbitrary order, so detections and assembled blocks are ordered through
- * this.
+ * Reorders `{ quad }` items the way a person reads the page, by recursive
+ * cuts. A part is split at the widest column gutter no item crosses (left
+ * before right). When some items cross the gutter (a title, an abstract, a
+ * wide heading), the gutter is looked for among the items narrower than half
+ * the content, and the crossing items divide the part into bands read top to
+ * bottom, each band split again. Failing both, the part is split at the
+ * widest blank band (top before bottom), which separates a footer sitting in
+ * the gutter from the columns above it. What cannot be split is read as one
+ * column: lines top to bottom, boxes within a line left to right. Detectors
+ * emit boxes in arbitrary order, so detections, blocks and the lines of a
+ * block are all ordered through this.
+ *
+ * A gutter must be {@link COLUMN_GAP_FRACTION} of the content width; a blank
+ * band must be as tall as the smallest item (one line of the smallest text),
+ * so ordinary line spacing and the gap under a heading never split.
+ *
+ * This departs from react-native-executorch's PaddleOCR task, whose single
+ * gutter sweep over the x projection of all boxes interleaves the columns of
+ * a page whose title or footer spans them.
  * @typeParam T The item type; anything carrying a `quad`.
  * @param items The items to order.
  * @returns The same items in reading order (the input array itself when it
@@ -283,103 +384,96 @@ const LINE_OVERLAP_FRACTION = 0.3;
  */
 export function orderByReadingOrder<T extends { readonly quad: Quad }>(items: T[]): T[] {
   'worklet';
-  const count = items.length;
-  if (count <= 1) {
+  if (items.length <= 1) {
     return items;
   }
-
   const boxes = items.map((it) => boundingBoxOfPoints(it.quad, 'xyxy'));
 
-  // A vertical gap between boxes only counts as a column gutter when it is
-  // reasonably wide relative to the page content (else word spacing would
-  // split columns everywhere).
-  let minX = Infinity;
-  let maxX = -Infinity;
-  for (const box of boxes) {
-    if (box.xmin < minX) minX = box.xmin;
-    if (box.xmax > maxX) maxX = box.xmax;
-  }
-  const minGap = COLUMN_GAP_FRACTION * Math.max(1, maxX - minX);
-
-  // Find the gutters: walk every box's left/right edge in x order, keeping a
-  // running count of how many boxes overlap the current x. Count 0 means no
-  // box occupies this x; when such an empty stretch is wider than minGap, cut
-  // a column boundary at its midpoint.
-  const edges: { x: number; delta: number }[] = [];
-  for (const box of boxes) {
-    edges.push({ x: box.xmin, delta: 1 });
-    edges.push({ x: box.xmax, delta: -1 });
-  }
-  // At the same x, process a box's left edge before another's right edge: two
-  // boxes that exactly touch must not look like an empty stretch.
-  edges.sort((a, b) => a.x - b.x || b.delta - a.delta);
-  const cuts: number[] = [];
-  let coverage = 0;
-  // Seed to the first (leftmost) edge, not 0, so a page whose leftmost box
-  // starts well inside a left margin doesn't read that margin as a gutter.
-  let gutterStart = edges.length > 0 ? edges[0]!.x : 0;
-  for (const edge of edges) {
-    const before = coverage;
-    coverage += edge.delta;
-    if (before > 0 && coverage === 0) {
-      gutterStart = edge.x;
-    } else if (before === 0 && coverage > 0 && edge.x - gutterStart >= minGap) {
-      cuts.push((gutterStart + edge.x) / 2);
-    }
-  }
-
-  // A box belongs to column k when exactly k cuts lie left of its center.
-  const columns: number[][] = Array.from({ length: cuts.length + 1 }, () => []);
-  for (let i = 0; i < count; i++) {
-    const centerX = (boxes[i]!.xmin + boxes[i]!.xmax) / 2;
-    let column = 0;
-    for (const cut of cuts) {
-      if (centerX > cut) column++;
-    }
-    columns[column]!.push(i);
-  }
-
-  // Inside each column: boxes whose vertical extents overlap enough sit on the
-  // same text line. Read lines top to bottom, and boxes within a line left to
-  // right.
+  // Depth first; the stack holds the parts still to order, the next one on top.
   const order: number[] = [];
-  for (const column of columns) {
-    column.sort((a, b) => boxes[a]!.ymin - boxes[b]!.ymin);
-    const lines: { items: number[]; ymin: number; ymax: number }[] = [];
-    for (const i of column) {
+  const stack: number[][] = [items.map((_, i) => i)];
+  while (stack.length > 0) {
+    const part = stack.pop()!;
+    if (part.length <= 1) {
+      order.push(...part);
+      continue;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minHeight = Infinity;
+    for (const i of part) {
       const box = boxes[i]!;
-      let placed = false;
-      for (const line of lines) {
-        // Overlap is measured against the SHORTER of the two heights, so a
-        // small box beside a tall one still joins its line.
-        const overlap = Math.min(line.ymax, box.ymax) - Math.max(line.ymin, box.ymin);
-        const minHeight = Math.min(line.ymax - line.ymin, box.ymax - box.ymin);
-        if (overlap >= LINE_OVERLAP_FRACTION * Math.max(1, minHeight)) {
-          line.items.push(i);
-          line.ymin = Math.min(line.ymin, box.ymin);
-          line.ymax = Math.max(line.ymax, box.ymax);
-          placed = true;
-          break;
+      if (box.xmin < minX) minX = box.xmin;
+      if (box.xmax > maxX) maxX = box.xmax;
+      if (box.ymax - box.ymin < minHeight) minHeight = box.ymax - box.ymin;
+    }
+    const contentWidth = Math.max(1, maxX - minX);
+    const minGutter = COLUMN_GAP_FRACTION * contentWidth;
+
+    // 1. A gutter across the whole part: columns.
+    const gutter = widestGap(boxes, part, 'x', minGutter);
+    if (gutter !== null) {
+      const left: number[] = [];
+      const right: number[] = [];
+      for (const i of part) {
+        (boxes[i]!.xmin < gutter.at ? left : right).push(i);
+      }
+      stack.push(right, left);
+      continue;
+    }
+
+    // 2. A gutter hidden by spanning items: bands between them.
+    const narrow = part.filter(
+      (i) => boxes[i]!.xmax - boxes[i]!.xmin < WIDE_FRACTION * contentWidth
+    );
+    const hidden = narrow.length >= 2 ? widestGap(boxes, narrow, 'x', minGutter) : null;
+    if (hidden !== null) {
+      const spanning = part.filter((i) => boxes[i]!.xmin < hidden.at && boxes[i]!.xmax > hidden.at);
+      spanning.sort((a, b) => boxes[a]!.ymin - boxes[b]!.ymin);
+      // An item belongs to band k when exactly k spanning items start above
+      // its center.
+      const bands: number[][] = Array.from({ length: spanning.length + 1 }, () => []);
+      for (const i of part) {
+        if (spanning.includes(i)) {
+          continue;
         }
+        const centerY = (boxes[i]!.ymin + boxes[i]!.ymax) / 2;
+        let band = 0;
+        for (const j of spanning) {
+          if (boxes[j]!.ymin < centerY) band++;
+        }
+        bands[band]!.push(i);
       }
-      if (!placed) {
-        lines.push({ items: [i], ymin: box.ymin, ymax: box.ymax });
+      // Top to bottom: band 0, the first spanning item, band 1, ...
+      const sequence: number[][] = [];
+      for (let k = 0; k < bands.length; k++) {
+        if (bands[k]!.length > 0) sequence.push(bands[k]!);
+        if (k < spanning.length) sequence.push([spanning[k]!]);
       }
+      for (let k = sequence.length - 1; k >= 0; k--) {
+        stack.push(sequence[k]!);
+      }
+      continue;
     }
-    lines.sort((a, b) => a.ymin - b.ymin);
-    for (const line of lines) {
-      line.items.sort(
-        (a, b) => boxes[a]!.xmin + boxes[a]!.xmax - (boxes[b]!.xmin + boxes[b]!.xmax)
-      );
-      order.push(...line.items);
+
+    // 3. A blank band: top and bottom.
+    const band = widestGap(boxes, part, 'y', ROW_GAP_HEIGHTS * Math.max(1, minHeight));
+    if (band !== null) {
+      const top: number[] = [];
+      const bottom: number[] = [];
+      for (const i of part) {
+        (boxes[i]!.ymin < band.at ? top : bottom).push(i);
+      }
+      stack.push(bottom, top);
+      continue;
     }
+
+    // 4. One column.
+    order.push(...orderColumn(boxes, part));
   }
   return order.map((i) => items[i]!);
 }
 
-// A box joins a stack when its x-span overlaps the stack's by STACK_X_OVERLAP
-// of the narrower width and the y-gap is within STACK_Y_GAP of its height;
-// boxes wider than STACK_GLYPH_ASPECT (above) never do.
 const STACK_X_OVERLAP = 0.25;
 const STACK_Y_GAP = 2.5;
 const STACK_UPWARD_OVERLAP = 0.5; // a box may reach back up this fraction of its height into the stack

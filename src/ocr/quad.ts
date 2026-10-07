@@ -28,6 +28,24 @@ export function quadFromBounds(box: BoundingBox<'xyxy'>): Quad {
 }
 
 /**
+ * Moves a quad by an offset, as when lines read on a crop are mapped back to
+ * the page.
+ * @param quad The quad to move.
+ * @param dx The horizontal offset to add.
+ * @param dy The vertical offset to add.
+ * @returns The moved quad, corners in the same order.
+ */
+export function translateQuad(quad: Quad, dx: number, dy: number): Quad {
+  'worklet';
+  return [
+    { x: quad[0].x + dx, y: quad[0].y + dy },
+    { x: quad[1].x + dx, y: quad[1].y + dy },
+    { x: quad[2].x + dx, y: quad[2].y + dy },
+    { x: quad[3].x + dx, y: quad[3].y + dy },
+  ];
+}
+
+/**
  * Splits an ordered TL, TR, BR, BL quad into `parts` equal vertical bands (each
  * an ordered quad), top to bottom. `parts <= 1` returns the quad unchanged.
  * @param ordered The quad corners ordered TL, TR, BR, BL.

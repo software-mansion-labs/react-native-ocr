@@ -13,7 +13,7 @@ import {
   paintLine,
 } from '../support/fakeOcrModel';
 import { tensorTracker } from '../support/fakeTensor';
-import { modelTracker } from '../support/rneMock';
+import { modelTracker, setFakeLayoutRegions, setFakeModel } from '../support/rneMock';
 
 const codedError = (code: string) => expect.objectContaining({ name: 'RnExecuTorchError', code });
 
@@ -147,14 +147,174 @@ describe('createOcr', () => {
     expect(modelTracker.liveCount()).toBe(0);
   });
 
-  it.each([
-    ['layout', { layout: { modelPath: '/models/layout.pte' } }],
-    ['documentModels', { documentModels: { modelPath: '/models/helpers.pte' } }],
-  ])('rejects a config with %s before loading anything', async (stage, extra) => {
+  it('rejects a config with documentModels before loading anything', async () => {
     installFakeOcrModel(PATH);
-    const config = { ...CONFIG, ...extra } as unknown as OcrModel;
+    const config = { ...CONFIG, documentModels: { modelPath: '/models/helpers.pte' } };
     await expect(createOcr(config)).rejects.toEqual(codedError('INVALID_ARGUMENT'));
-    await expect(createOcr(config)).rejects.toThrow(stage);
+    await expect(createOcr(config)).rejects.toThrow('documentModels');
     expect(modelTracker.liveCount()).toBe(0);
   });
 });
+
+describe('createOcr with a layout model', () => {
+  const LAYOUT_PATH = '/models/layout.pte';
+  type Label = 'text' | 'image' | 'table';
+  const LAYOUT_CONFIG: OcrModel<Label> = {
+    ...CONFIG,
+    layout: {
+      modelPath: LAYOUT_PATH,
+      modelOpts: { labels: ['text', 'image', 'table'], boxFormat: 'xyxy' },
+    } as unknown as NonNullable<OcrModel<Label>['layout']>,
+  };
+  const installFakeLayoutModel = () =>
+    setFakeModel(LAYOUT_PATH, { schema: fakeOcrSchema(), methods: {} });
+  const box = (xmin: number, ymin: number, xmax: number, ymax: number) => ({
+    format: 'xyxy' as const,
+    xmin,
+    ymin,
+    xmax,
+    ymax,
+  });
+  const region = (label: Label, bounds: ReturnType<typeof box>, confidence: number) => ({
+    box: bounds,
+    label,
+    confidence,
+  });
+
+  it('reads each region on its own crop and assembles blocks in reading order', async () => {
+    const calls = installFakeOcrModel(PATH);
+    installFakeLayoutModel();
+    // A 160x96 page of 64x32 cells (one detector size each, so quads map 1:1)
+    // in two columns around a 32 px gutter: text/text, text/image, empty/table.
+    const page = blankPage(160, 96);
+    const bad = paintLine(page, 0, 4, 'bad');
+    const cab = paintLine(page, 104, 20, 'cab');
+    const dig = paintLine(page, 8, 36, 'dig');
+    paintLine(page, 104, 40, 'fee'); // inside the image region: never read
+    const left1 = region('text', box(0, 0, 64, 32), 0.9);
+    const nested = region('text', box(8, 0, 40, 32), 0.6); // a line inside left1
+    const right1 = region('text', box(95.6, -2, 160.4, 32.2), 0.8); // rounded and clamped
+    const left2 = region('text', box(0, 32, 64, 64), 0.7);
+    const image = region('image', box(96, 32, 160, 64), 0.95);
+    const empty = region('text', box(0, 64, 64, 96), 0.5);
+    const table = region('table', box(96, 64, 160, 96), 0.85);
+    setFakeLayoutRegions(() => [left1, nested, right1, left2, image, empty, table]);
+    // The crops are read in region order: left1, right1, left2, empty, table.
+    const queue = [[bad], [shift(cab, -96, 0)], [shift(dig, 0, -32)], [], []];
+    setFakeDbnetTextQuads(() => queue.shift() ?? []);
+
+    const ocr = await createOcr<Label>(LAYOUT_CONFIG);
+    const result = await ocr.runOcr(page);
+    ocr.dispose();
+
+    const line = (text: string, quad: typeof bad) => ({ text, confidence: 1, quad });
+    expect(calls.detect).toHaveLength(5);
+    expect(result.detections).toEqual([line('bad', bad), line('dig', dig), line('cab', cab)]);
+    expect(result.blocks).toEqual([
+      {
+        regionType: 'text',
+        bbox: left1.box,
+        layoutConfidence: 0.9,
+        isTable: false,
+        lines: [line('bad', bad)],
+        text: 'bad',
+      },
+      {
+        regionType: 'text',
+        bbox: left2.box,
+        layoutConfidence: 0.7,
+        isTable: false,
+        lines: [line('dig', dig)],
+        text: 'dig',
+      },
+      {
+        regionType: 'text',
+        bbox: right1.box,
+        layoutConfidence: 0.8,
+        isTable: false,
+        lines: [line('cab', cab)],
+        text: 'cab',
+      },
+      {
+        regionType: 'table',
+        bbox: table.box,
+        layoutConfidence: 0.85,
+        isTable: true,
+        lines: [],
+        text: '',
+      },
+    ]);
+    expect(result.regions).toEqual([left1, right1, left2, image, empty, table]);
+    expect(result.image).toBe(page);
+  });
+
+  it('returns no blocks for a page without regions', async () => {
+    installFakeOcrModel(PATH);
+    installFakeLayoutModel();
+    const page = blankPage(64, 32);
+    const ocr = await createOcr<Label>(LAYOUT_CONFIG);
+    expect(ocr.runOcrWorklet(page)).toEqual({
+      detections: [],
+      blocks: [],
+      regions: [],
+      image: page,
+    });
+    ocr.dispose();
+  });
+
+  it('skips a region that rounds to nothing', async () => {
+    const calls = installFakeOcrModel(PATH);
+    installFakeLayoutModel();
+    const page = blankPage(64, 32);
+    setFakeLayoutRegions(() => [
+      region('text', box(10, 10, 10.4, 20), 0.9),
+      region('text', box(70, 0, 90, 20), 0.9),
+    ]);
+    const ocr = await createOcr<Label>(LAYOUT_CONFIG);
+    expect(ocr.runOcrWorklet(page).blocks).toEqual([]);
+    expect(calls.detect).toHaveLength(0);
+    ocr.dispose();
+  });
+
+  it('honors custom visual and table labels', async () => {
+    installFakeOcrModel(PATH);
+    installFakeLayoutModel();
+    const page = blankPage(128, 32);
+    const figure = region('text', box(0, 0, 64, 32), 0.9);
+    const grid = region('image', box(64, 0, 128, 32), 0.9);
+    setFakeLayoutRegions(() => [figure, grid]);
+    setFakeDbnetTextQuads(() => []);
+    const ocr = await createOcr<Label>({
+      ...LAYOUT_CONFIG,
+      visualLabels: ['text'],
+      tableLabel: 'image',
+    });
+    const result = ocr.runOcrWorklet(page);
+    ocr.dispose();
+    expect(result.blocks).toEqual([
+      expect.objectContaining({ regionType: 'image', isTable: true, lines: [] }),
+    ]);
+  });
+
+  it('releases both models on dispose', async () => {
+    installFakeOcrModel(PATH);
+    installFakeLayoutModel();
+    const ocr = await createOcr<Label>(LAYOUT_CONFIG);
+    expect(modelTracker.liveCount()).toBe(2);
+    ocr.dispose();
+    expect(modelTracker.liveCount()).toBe(0);
+    expect(() => ocr.runOcrWorklet(blankPage(64, 32))).toThrow(codedError('RESOURCE_DISPOSED'));
+    expect(tensorTracker.liveCount()).toBe(0);
+  });
+
+  it('releases the OCR model when the layout model cannot be loaded', async () => {
+    installFakeOcrModel(PATH);
+    await expect(createOcr<Label>(LAYOUT_CONFIG)).rejects.toEqual(codedError('LOAD_FAILED'));
+    expect(modelTracker.liveCount()).toBe(0);
+  });
+});
+
+/** Moves a painted quad, as the detector sees it on a crop. */
+function shift<Q extends readonly { x: number; y: number }[]>(quad: Q, dx: number, dy: number): Q {
+  return quad.map((p) => ({ x: p.x + dx, y: p.y + dy })) as unknown as Q;
+}
