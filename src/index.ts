@@ -2,8 +2,9 @@
  * Advanced on-device OCR for React Native, built on react-native-executorch.
  *
  * `createOcr` and `useOcr` run whole-page OCR with the models in `models.ocr`,
- * or per-region OCR with a layout model from `models.layoutDetection`; the
- * document helpers follow in a later phase.
+ * or per-region OCR with a layout model from `models.layoutDetection`, with
+ * page orientation, dewarping and table structure from the document helpers
+ * in `models.documentModels`.
  * @packageDocumentation
  */
 
@@ -38,6 +39,7 @@ export {
 
 export { greedyCtcDecode } from './ocr/ctc';
 export { mergeContainedRegions } from './ocr/layout';
+export { fillTableCells } from './document/table';
 
 export { createOcr, type Ocr } from './ocr/createOcr';
 export { useOcr } from './hooks/useOcr';
@@ -51,5 +53,6 @@ export type {
   RunOcrOptions,
 } from './ocr/types';
 export type { DocumentModelsConfig, TableConfig } from './document/types';
+export type { Orientation } from './document/documentModels';
 
 export type { ImageBuffer, NormalizeOptions, Quad } from 'react-native-executorch/cv';

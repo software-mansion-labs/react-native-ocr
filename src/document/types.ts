@@ -1,7 +1,7 @@
 /**
  * Configuration types for the optional document-helper model (page
- * orientation, dewarping and table structure). The implementation follows in
- * `documentModels.ts`; the registry only needs the shapes.
+ * orientation, dewarping and table structure), kept apart from
+ * `documentModels.ts` so the model registry can import the shapes alone.
  */
 
 /**

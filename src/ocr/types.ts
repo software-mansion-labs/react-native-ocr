@@ -1,7 +1,6 @@
 /**
- * Public configuration and result types of the OCR pipeline. The pipeline
- * itself (`createOcr`, the engine, the document helpers) follows in later
- * phases; the model registry only needs the shapes.
+ * Public configuration and result types of the OCR pipeline, kept apart from
+ * `createOcr` so the model registry can import the shapes alone.
  */
 import type { ObjectDetection, ObjectDetectorModel, Tensor } from 'react-native-executorch';
 import type { BoundingBox, ImageBuffer, NormalizeOptions, Quad } from 'react-native-executorch/cv';
