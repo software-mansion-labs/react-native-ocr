@@ -21,7 +21,7 @@ import {
   type SkImage,
 } from '@shopify/react-native-skia';
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -323,12 +323,20 @@ export default function DocumentScreen() {
   };
 
   // Run as soon as the models and the page are ready, again on every reload
-  // and on every change of page or stage.
+  // and on every change of page or stage. A change of page or layout also
+  // changes the config, and the runner lags that by one load: a run on the
+  // previous runner would race its disposal, so the run waits for the runner
+  // of this config.
+  const loadedFor = useRef<OcrModel<DocLayoutLabel> | undefined>(undefined);
+  useEffect(() => {
+    loadedFor.current = runOcr ? config : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runOcr]);
   useEffect(() => {
     setOutcome(undefined);
-    if (ready) run();
+    if (ready && loadedFor.current === config) run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, image, stages]);
+  }, [ready, image, stages, runOcr, config]);
 
   const pickPhoto = async (useCamera: boolean) => {
     const uri = await getImage(useCamera, 1200);
