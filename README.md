@@ -217,19 +217,26 @@ correct. The other alphabets' misses are the usual int8 CRNN substitutions.
 
 ## Known issue: the Vulkan exports
 
-`models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT` resolves to the Vulkan export on Android, and loading
-it currently kills the app from inside react-native-executorch's `loadModel` (a crash in the
-ExecuTorch Vulkan backend, reproduced on a Galaxy S23 and on the emulator). The fix is being
-made in ExecuTorch and will arrive through a react-native-executorch release; this package needs
-no change for it. Until then, use `models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK` on Android. The
-EasyOCR Vulkan exports load and run on a Galaxy S23 (they keep the recognizer on XNNPACK), but
-crash the Android emulator; use `XNNPACK` there. The PP-DocLayout Vulkan export
-(`models.layoutDetection.PP_DOCLAYOUT.VULKAN`, also the Android `DEFAULT`) loads on the S23 but
-fails at execute inside ExecuTorch's Vulkan backend (`Vulkan graph declares 3 inputs and 4
-outputs, but the delegate call supplied 8 arguments`), an export defect being fixed outside this
-package; use `PP_DOCLAYOUT.XNNPACK` on Android. The PaddleHelpers Vulkan export
-(`models.documentModels.PP_HELPERS.VULKAN`, the Android `DEFAULT`) crashes at load on the S23
-exactly like PP-OCRv6's; use `PP_HELPERS.XNNPACK` on Android until the fix ships.
+On Android the registry's `DEFAULT` entries resolve to the Vulkan exports. They need the ExecuTorch
+Vulkan backend from react-native-executorch's **`0.10.6-libs`** native release or newer: with the
+`0.10.4-libs` that every react-native-executorch npm release up to 0.10.5 pins, loading the
+PP-OCRv6 and PaddleHelpers exports kills the app inside `loadModel` (a crash in Qualcomm's shader
+compiler, reproduced on a Galaxy S23). With `0.10.6-libs` both load and run on the S23: PP-OCRv6
+reads the sample page identically to XNNPACK and to react-native-executorch's own pipeline
+(11/11 lines, 0.00 px), and orientation, dewarping and table structure give the same results as on
+XNNPACK in about 60% of the time. Until an npm release of react-native-executorch pins those
+libraries, either pin them yourself the way this repository does (`CONTRIBUTING.md`, a Yarn patch
+of `nativeLibsVersion`) or use the `XNNPACK` entries on Android. Two limits remain whatever the
+libraries: the PP-DocLayout Vulkan export (`models.layoutDetection.PP_DOCLAYOUT.VULKAN`, also the
+Android `DEFAULT`) loads but fails at execute inside the Vulkan backend (`Vulkan graph declares 3
+inputs and 4 outputs, but the delegate call supplied 8 arguments`): five of its decoder-layer
+partitions return the same sigmoid tensor twice (the reference points for the next layer and
+their detached copy for the box head), and the ExecuTorch 1.3.1 Vulkan serializer the export used
+collapsed the two output slots into one; the serializer was fixed on ExecuTorch `main` on
+2026-09-21 (pytorch/executorch#22898), so the export needs re-cutting with it, and until then use
+`PP_DOCLAYOUT.XNNPACK` on Android; and every Vulkan export crashes
+the Android emulator (swiftshader), so use `XNNPACK` there. The EasyOCR Vulkan exports keep the
+recognizer on XNNPACK and read exactly as the XNNPACK ones.
 
 ## API reference
 
