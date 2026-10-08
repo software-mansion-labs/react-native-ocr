@@ -21,6 +21,14 @@ yarn example ios      # builds and runs the example on a simulator
 yarn example android  # builds and runs the example on a device/emulator
 ```
 
+react-native-executorch downloads its native ExecuTorch libraries from a GitHub release pinned by
+`nativeLibsVersion` in its `package.json`. This repository pins that to `0.10.6-libs` (the
+Vulkan backend rebuilt with the Adreno pipeline-creation fix) on top of the published
+`react-native-executorch@0.10.5`, which still points at `0.10.4-libs`, through a Yarn patch
+(`.yarn/patches/`, wired in `resolutions`). Drop the patch once an npm release of
+react-native-executorch pins `0.10.6` or later itself. The published package does not carry the
+pin; apps get the libraries their own react-native-executorch version pins.
+
 The example app is an Expo project; `expo run:*` generates `example/ios` and `example/android`,
 which are git-ignored. Yarn creates no `node_modules` link for the root workspace, so
 `example/react-native.config.js` points autolinking at the repository root explicitly and Metro

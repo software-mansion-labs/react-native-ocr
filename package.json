@@ -110,14 +110,15 @@
     "react-native": "0.85.3",
     "react-native-blob-util": "^0.24.0",
     "react-native-builder-bob": "^0.40.18",
-    "react-native-executorch": "^0.10.3",
+    "react-native-executorch": "^0.10.5",
     "react-native-worklets": "0.10.3",
     "release-it": "^17.10.0",
     "typedoc": "^0.28.13",
     "typescript": "~5.9.2"
   },
   "resolutions": {
-    "react-native-worklets": "0.10.3"
+    "react-native-worklets": "0.10.3",
+    "react-native-executorch@npm:^0.10.5": "patch:react-native-executorch@npm%3A0.10.5#~/.yarn/patches/react-native-executorch-npm-0.10.5-ed40f33766.patch"
   },
   "workspaces": [
     "example"
