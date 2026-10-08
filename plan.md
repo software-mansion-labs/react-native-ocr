@@ -2,7 +2,7 @@
 
 ## Status
 
-**Phases 1 to 7 done and on `main`; Phase 8 (release) in progress on `feat/phase-8-release` (2026-10-07).** Phase 1 merged as PR #1 (2026-09-24), Phase 2 as PR #2 (2026-09-25), Phase 3 as PR #5 (2026-09-28), Phase 4 as PR #6 (2026-10-05), Phase 5 as PR #7 (2026-10-06), Phase 6 as PR #8 (2026-10-07), Phase 7 as PR #9 (2026-10-07). PR #3, the first Phase 3 PR, was stacked on the Phase 2 branch and got merged into that branch instead of `main`; it was reverted there (PR #4) and Phase 3 was merged again straight into `main`. Read this section first when resuming; it records what differs from the plan below.
+**Phases 1 to 7 done and on `main`; Phase 8 (release) is PR #10 from `feat/phase-8-release`, opened 2026-10-08.** Phase 1 merged as PR #1 (2026-09-24), Phase 2 as PR #2 (2026-09-25), Phase 3 as PR #5 (2026-09-28), Phase 4 as PR #6 (2026-10-05), Phase 5 as PR #7 (2026-10-06), Phase 6 as PR #8 (2026-10-07), Phase 7 as PR #9 (2026-10-07). PR #3, the first Phase 3 PR, was stacked on the Phase 2 branch and got merged into that branch instead of `main`; it was reverted there (PR #4) and Phase 3 was merged again straight into `main`. Read this section first when resuming; it records what differs from the plan below.
 
 Done:
 
