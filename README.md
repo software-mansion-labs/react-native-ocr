@@ -215,8 +215,9 @@ the int8 EasyOCR English model read about 98% of the characters. The **XNNPACK**
 Chinese export never emits some common characters (the recognizer's blank wins those timesteps on
 two different fonts, horizontally and vertically) while it reads the rest of the line correctly;
 the Core ML export of the same model reads every one of them (its two misses are dropped
-spaces), so this is a defect of the XNNPACK int8 quantization being reported to the exporters, not
-something this package can correct. The EasyOCR Vulkan exports (Galaxy S23) read the English,
+spaces), so this is a defect of the XNNPACK int8 quantization, still to be looked into on the export
+side, not something this package can correct; until then use the Core ML export on iOS and
+expect the drops on Android. The EasyOCR Vulkan exports (Galaxy S23) read the English,
 Cyrillic and Latin pages at 7/11 97.8%, 1/7 94.2% and 3/6 95.0%, the XNNPACK reads with one
 fp16-detector difference each way. The other alphabets' misses are the usual int8 CRNN
 substitutions, and they differ between the two int8 exports (Cyrillic and Kannada are a little
