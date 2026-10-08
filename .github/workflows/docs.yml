@@ -1,8 +1,9 @@
 name: Docs
 
 # Builds the typedoc API reference and publishes it to GitHub Pages, as
-# react-native-rag does. Pages has to be enabled on the repository with
-# "GitHub Actions" as its source before the first run.
+# react-native-rag does. The build always runs; the deployment is skipped
+# until Pages is enabled on the repository with "GitHub Actions" as its
+# source, so a push to main stays green before that.
 on:
   push:
     branches: [main]
@@ -34,13 +35,29 @@ jobs:
       - name: Build docs
         run: yarn docs
 
+      # The Pages API answers 404 until Pages is enabled on the repository;
+      # deploying then fails the run, so the two steps below wait for it.
+      - name: Check whether Pages is enabled
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" --silent 2>/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not enabled on this repository yet; the docs were built but not deployed."
+          fi
+
       - name: Upload
+        if: steps.pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
           name: github-pages-${{ github.run_id }}
 
       - name: Deploy
+        if: steps.pages.outputs.enabled == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
         with:
