@@ -194,26 +194,33 @@ The EasyOCR exports are int8 (XNNPACK and Core ML) and read a printed page as be
 (`example/assets/ocr/<script>.png`, rendered by `scripts/make-ocr-sample.py`) carries a heading,
 a few lines of running text and a line with digits; the Japanese, Chinese and Korean pages also
 carry two vertical columns, read with `vertical: true`. "Lines" counts lines read exactly;
-"chars" is the character accuracy over the page (edit distance per line). Results are from the
-XNNPACK export, identical on the iOS simulator and the Android emulator.
+"chars" is the character accuracy over the page (edit distance per line). XNNPACK results are
+identical on the iOS simulator, the Android emulator and a Galaxy S23; Core ML results are from
+an iPhone 17 (the iOS `DEFAULT`), where a page takes 105 to 225 ms against 360 to 720 ms on the
+simulator's XNNPACK.
 
-| Alphabet | Lines | Chars | What goes wrong                                                      |
-| -------- | ----- | ----- | -------------------------------------------------------------------- |
-| English  | 7/11  | 97.8% | `snall`, `tlat`, `!` as `l`, a dropped period and a dropped space    |
-| Cyrillic | 2/7   | 95.5% | `ра` as Latin `pa`, `и` as `ӏ`, `л` as `Jт`, `₽` as `П`, `ї` as `і`  |
-| Latin    | 3/6   | 94.2% | `Ç` as `C`, `ö` as `Ö`, `,` as `;`, `M` as `^A`, a dropped period    |
-| Japanese | 8/8   | 100%  | nothing, vertical columns included                                   |
-| Chinese  | 0/8   | 77.6% | common characters dropped outright (文 字 京 国 了 顾 春), see below |
-| Korean   | 6/8   | 94.4% | `뛰어넘는다` as `뒤어넘논다`, `을` as `올`, a dropped space          |
-| Telugu   | 5/6   | 99.0% | one dropped space                                                    |
-| Kannada  | 2/6   | 96.1% | `ಠ` as `7`, a dropped conjunct, a doubled space and a doubled virama |
+| Alphabet | XNNPACK lines | XNNPACK chars | Core ML lines | Core ML chars | What goes wrong on XNNPACK                                           |
+| -------- | ------------- | ------------- | ------------- | ------------- | -------------------------------------------------------------------- |
+| English  | 7/11          | 97.8%         | 7/11          | 97.8%         | `snall`, `tlat`, `!` as `l`, a dropped period and a dropped space    |
+| Cyrillic | 2/7           | 95.5%         | 1/7           | 92.9%         | `ра` as Latin `pa`, `и` as `ӏ`, `л` as `Jт`, `₽` as `П`, `ї` as `і`  |
+| Latin    | 3/6           | 94.2%         | 4/6           | 97.1%         | `Ç` as `C`, `ö` as `Ö`, `,` as `;`, `M` as `^A`, a dropped period    |
+| Japanese | 8/8           | 100%          | 8/8           | 100%          | nothing, vertical columns included                                   |
+| Chinese  | 0/8           | 77.6%         | 6/8           | 94.8%         | common characters dropped outright (文 字 京 国 了 顾 春), see below |
+| Korean   | 6/8           | 94.4%         | 6/8           | 94.4%         | `뛰어넘는다` as `뒤어넘논다`, `을` as `올`, a dropped space          |
+| Telugu   | 5/6           | 99.0%         | 6/6           | 100%          | one dropped space                                                    |
+| Kannada  | 2/6           | 96.1%         | 4/6           | 93.1%         | `ಠ` as `7`, a dropped conjunct, a doubled space and a doubled virama |
 
 For Latin text prefer PP-OCRv6: its fp32 export read every line of the English page exactly where
-the int8 EasyOCR English model read about 98% of the characters. The simplified Chinese export
-never emits some common characters (the recognizer's blank wins those timesteps on two different
-fonts, horizontally and vertically) while it reads the rest of the line correctly; that is a
-defect of the int8 export being reported to the exporters, not something this package can
-correct. The other alphabets' misses are the usual int8 CRNN substitutions.
+the int8 EasyOCR English model read about 98% of the characters. The **XNNPACK** simplified
+Chinese export never emits some common characters (the recognizer's blank wins those timesteps on
+two different fonts, horizontally and vertically) while it reads the rest of the line correctly;
+the Core ML export of the same model reads every one of them (its two misses are dropped
+spaces), so this is a defect of the XNNPACK int8 quantization being reported to the exporters, not
+something this package can correct. The EasyOCR Vulkan exports (Galaxy S23) read the English,
+Cyrillic and Latin pages at 7/11 97.8%, 1/7 94.2% and 3/6 95.0%, the XNNPACK reads with one
+fp16-detector difference each way. The other alphabets' misses are the usual int8 CRNN
+substitutions, and they differ between the two int8 exports (Cyrillic and Kannada are a little
+worse on Core ML, Latin, Chinese, Telugu and Kannada's heading better).
 
 ## Known issue: the Vulkan exports
 
