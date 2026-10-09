@@ -1,0 +1,66 @@
+name: Publish to npm
+
+# Publishes the package from CI with Software Mansion's shared action, as
+# react-native-rag does, so no one needs publish rights on the @swmansion npm
+# organisation on their own machine. Every input defaults to a dry run; a real
+# release sets dry-run off and, for the version commit and tag, git
+# operations on.
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: Type of release to publish.
+        type: choice
+        options: [stable, nightly, beta, alpha, rc]
+        default: stable
+      version:
+        description: Explicit version in x.y.z format (leave empty to infer automatically).
+        type: string
+        required: false
+        default: ''
+      perform-git-operations:
+        description: Create and push the release commit + tag.
+        type: boolean
+        default: false
+      dry-run:
+        description: Dry run, no actual publish or git push.
+        type: boolean
+        default: true
+
+env:
+  # The publish job never builds native code, so skip react-native-executorch's
+  # postinstall download of its native libraries.
+  RNET_SKIP_DOWNLOAD: '1'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org/
+
+      - name: Publish @swmansion/react-native-ocr
+        uses: software-mansion/npm-package-publish@22b6e632b4310c5c061a047bccc99d0cea88d2bb
+        with:
+          package-name: '@swmansion/react-native-ocr'
+          package-json-path: 'package.json'
+          install-dependencies-command: 'yarn install --immutable'
+          release-type: ${{ inputs.release-type }}
+          version: ${{ inputs.version }}
+          perform-git-operations: ${{ inputs.perform-git-operations }}
+          dry-run: ${{ inputs.dry-run }}

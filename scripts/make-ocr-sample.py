@@ -22,19 +22,28 @@
   page), for the Document screen's dewarp toggle.
 - example/assets/ocr/table.png: a page with a title and a ruled table, for
   the Document screen's table structure.
+- example/assets/ocr/<script>.png, one per EasyOCR alphabet besides English
+  (cyrillic, latin, japanese, zh_sim, korean, telugu, kannada): a heading,
+  a few lines of running text in that script, a line with digits and
+  punctuation, and on the CJK pages two columns of vertical text, for the
+  EasyOCR screen's per-script check. Every character is checked against the
+  recognizer's alphabet in `src/charsets.ts`, so a miss on device is the
+  model's, never the page's.
 - example/assets/ocr/expected.json: the lines each page carries, so a screen
   can grade what it read, plus the table's row and column counts.
 
-Needs Pillow, NumPy and the macOS system fonts.
+Needs Pillow with raqm (for the Indic conjuncts), NumPy and the macOS system fonts.
 """
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
-ASSETS = Path(__file__).resolve().parent.parent / "example" / "assets" / "ocr"
+ROOT = Path(__file__).resolve().parent.parent
+ASSETS = ROOT / "example" / "assets" / "ocr"
 FONT = "/System/Library/Fonts/Helvetica.ttc"
 
 
@@ -285,7 +294,166 @@ def render_table() -> tuple[list[str], list[int]]:
     return lines, [len(TABLE_ROWS), len(TABLE_ROWS[0])]
 
 
+def alphabets() -> dict[str, set[str]]:
+    """The EasyOCR alphabets from `src/charsets.ts`, keyed as there."""
+    source = (ROOT / "src" / "charsets.ts").read_text(encoding="utf8")
+    body = re.search(r"export const alphabets = \{(.*?)\n\}", source, re.S).group(1)
+    return {
+        key: set(value.replace("\\'", "'").replace("\\\\", "\\"))
+        for key, value in re.findall(r"\n  ([a-z_]+):\s*\n?\s*'((?:\\.|[^'])*)'", body)
+    }
+
+
+class Script:
+    def __init__(
+        self,
+        key: str,
+        font_path: str,
+        heading: str,
+        lines: list[str],
+        columns: list[str] = (),
+    ) -> None:
+        self.key = key
+        self.font_path = font_path
+        self.heading = heading
+        self.lines = lines
+        # Vertical columns, written top to bottom one glyph under the other.
+        self.columns = list(columns)
+
+
+# Running text in each script, sized so that a line fits the page at 30 px.
+# The CJK pages carry two vertical columns on the right, as a sign or a book
+# spine would, because that is where vertical text occurs in practice.
+SCRIPTS = [
+    Script(
+        "cyrillic",
+        FONT,
+        "Проверка распознавания",
+        [
+            "Быстрая коричневая лиса",
+            "прыгает через ленивую собаку",
+            "Счет 40713 на сумму 1 284,50 ₽",
+            "Срок оплаты: 14 октября",
+            "Київ, вулиця Хрещатик",
+            "Спасибо!",
+        ],
+    ),
+    Script(
+        "latin",
+        FONT,
+        "Prüfung der Erkennung",
+        [
+            "Zażółć gęślą jaźń",
+            "Ça coûte 1 284,50 € à Genève",
+            "Año nuevo en São Paulo",
+            "Straße, Köln, Ærø, Þórshöfn",
+            "Thank you! Merci. Danke.",
+        ],
+    ),
+    Script(
+        "japanese",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+        "文字認識の確認",
+        [
+            "東京駅から新宿まで",
+            "きつねが犬を飛び越える",
+            "請求書番号 40713",
+            "合計 1,284円",
+            "ありがとうございました",
+        ],
+        ["春夏秋冬", "日本語の縦書き"],
+    ),
+    Script(
+        "zh_sim",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "文字识别测试",
+        [
+            "北京市朝阳区建国路",
+            "狐狸跳过了懒狗",
+            "发票编号 40713",
+            "总计 1284.50 元",
+            "谢谢惠顾",
+        ],
+        ["春夏秋冬", "中文竖排文字"],
+    ),
+    Script(
+        "korean",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "문자 인식 확인",
+        [
+            "서울특별시 강남구",
+            "여우가 게으른 개 위로 뛰어넘는다",
+            "청구서 번호 40713",
+            "합계 1,284원",
+            "감사합니다",
+        ],
+        ["봄여름가을겨울", "세로쓰기"],
+    ),
+    Script(
+        "telugu",
+        "/System/Library/Fonts/Supplemental/Telugu Sangam MN.ttc",
+        "పాఠ్య గుర్తింపు పరీక్ష",
+        [
+            "హైదరాబాద్ నగరం",
+            "నక్క కుక్కను దాటి దూకింది",
+            "బిల్లు సంఖ్య 40713",
+            "మొత్తం 1284.50",
+            "ధన్యవాదాలు",
+        ],
+    ),
+    Script(
+        "kannada",
+        "/System/Library/Fonts/Supplemental/Kannada Sangam MN.ttc",
+        "ಪಠ್ಯ ಗುರುತಿಸುವಿಕೆ ಪರೀಕ್ಷೆ",
+        [
+            "ಬೆಂಗಳೂರು ನಗರ",
+            "ನರಿ ನಾಯಿಯನ್ನು ದಾಟಿ ಹಾರಿತು",
+            "ಬಿಲ್ ಸಂಖ್ಯೆ 40713",
+            "ಒಟ್ಟು 1284.50",
+            "ಧನ್ಯವಾದಗಳು",
+        ],
+    ),
+]
+
+
+def render_script(script: Script, alphabet: set[str]) -> list[str]:
+    texts = [script.heading, *script.lines, *script.columns]
+    for text in texts:
+        unknown = sorted({c for c in text if c not in alphabet})
+        if unknown:
+            raise SystemExit(f"{script.key}: {text!r} uses characters outside the alphabet: {unknown}")
+
+    def f(size: int) -> ImageFont.FreeTypeFont:
+        return ImageFont.truetype(script.font_path, size)
+
+    page = Image.new("RGB", (800, 600), "white")
+    draw = ImageDraw.Draw(page)
+    draw.text((40, 30), script.heading, font=f(44), fill="black")
+    # Indic vowel signs reach well above and below the base line: give them room.
+    leading = 64 if script.key in ("telugu", "kannada") else 56
+    for i, line in enumerate(script.lines):
+        draw.text((40, 130 + i * leading), line, font=f(30), fill="black")
+
+    # Two vertical columns down the right-hand side, one glyph under the other
+    # with the leading of a printed column, so the detector sees separate
+    # glyph boxes that the vertical pass groups into stacks.
+    for i, column in enumerate(script.columns):
+        x = 700 - i * 90
+        y = 130
+        glyph_font = f(44)
+        for glyph in column:
+            box = draw.textbbox((0, 0), glyph, font=glyph_font)
+            draw.text((x - (box[2] - box[0]) / 2 - box[0], y - box[1]), glyph, font=glyph_font, fill="black")
+            y += (box[3] - box[1]) + 12
+
+    page.save(ASSETS / f"{script.key}.png", optimize=True)
+    print(f"wrote {ASSETS / f'{script.key}.png'} {page.size}")
+    return texts
+
+
 ASSETS.mkdir(parents=True, exist_ok=True)
+if not features.check("raqm"):
+    raise SystemExit("Pillow was built without raqm: the Telugu and Kannada pages would not be shaped")
 sample = render_sample()
 render_rotated()
 render_curved()
@@ -299,5 +467,8 @@ expected = {
     "table": table,
     "tableShape": table_shape,
 }
+known = alphabets()
+for script in SCRIPTS:
+    expected[script.key] = render_script(script, known[script.key])
 (ASSETS / "expected.json").write_text(json.dumps(expected, indent=2) + "\n")
 print(f"wrote {ASSETS / 'expected.json'}")

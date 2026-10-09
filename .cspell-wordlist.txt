@@ -96,3 +96,5 @@ rowspan
 softmax
 colspan
 dewarped
+googletagmanager
+JBFWFP
