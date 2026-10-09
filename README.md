@@ -17,6 +17,8 @@ dewarping and table structure, all running on the device through ExecuTorch.
 - [:abc: EasyOCR alphabets](#abc-easyocr-alphabets)
 - [:warning: Known issue: the Vulkan exports](#warning-known-issue-the-vulkan-exports)
 - [:page_with_curl: API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:handshake: Contributing](#handshake-contributing)
+- [:page_facing_up: License](#page_facing_up-license)
 
 ## :rocket: Features
 
@@ -274,8 +276,11 @@ yarn test:native       # GoogleTest suites for the C++ kernels, against the host
 yarn docs              # the API reference, into docs/
 ```
 
-See `CONTRIBUTING.md` for the repository layout, the native build, the sample pages and the
-release process.
+## :handshake: Contributing
+
+Contributions are welcome! See the [contributing guide](CONTRIBUTING.md) to learn about the
+development workflow, the repository layout, the native build, the sample pages and the release
+process.
 
 ## :page_facing_up: License
 
