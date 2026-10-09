@@ -8,15 +8,15 @@ dewarping and table structure, all running on the device through ExecuTorch.
 > **Status: pre-release.** `0.1.0` is being prepared and nothing is published to npm yet; the
 > API below is what it will ship. `plan.md` holds the roadmap and the verification record.
 
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Models](#models)
-- [EasyOCR alphabets](#easyocr-alphabets)
-- [Known issue: the Vulkan exports](#known-issue-the-vulkan-exports)
-- [API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:rocket: Features](#rocket-features)
+- [:package: Installation](#package-installation)
+- [:books: Usage](#books-usage)
+- [:brain: Models](#brain-models)
+- [:abc: EasyOCR alphabets](#abc-easyocr-alphabets)
+- [:warning: Known issue: the Vulkan exports](#warning-known-issue-the-vulkan-exports)
+- [:page_with_curl: API reference](https://software-mansion-labs.github.io/react-native-ocr/)
 
-## Features
+## :rocket: Features
 
 - Whole-page text detection and recognition with PaddleOCR PP-OCRv6 through `useOcr` and
   `createOcr`: oriented quads with text and confidence, in reading order, with the same results
@@ -39,7 +39,7 @@ dewarping and table structure, all running on the device through ExecuTorch.
   `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
   public API, and the whole pipeline runs on its worklet runtime.
 
-## Installation
+## :package: Installation
 
 ```sh
 yarn add @swmansion/react-native-ocr react-native-executorch
@@ -70,7 +70,7 @@ Requirements:
 Models download from Hugging Face on first use and are cached by react-native-executorch;
 `useOcr` reports `downloadProgress`.
 
-## Usage
+## :books: Usage
 
 ```tsx
 import { models, useOcr } from '@swmansion/react-native-ocr';
@@ -169,7 +169,7 @@ glyph gives the recognizer no context, so `O` and `0` or `l` and `I` can swap, a
 touch are only approximately separated. With PaddleOCR (DBNet, no glyph-level mode) stacks are
 read as clustered glyphs only.
 
-## Models
+## :brain: Models
 
 Every entry of the registry carries `XNNPACK`, `COREML` and `VULKAN` exports plus a `DEFAULT`
 that resolves to the fastest one the platform can run: Core ML on an iOS device, XNNPACK on the
@@ -188,7 +188,7 @@ published on Hugging Face by Software Mansion.
 The int8 Core ML PP-OCRv6 export detects less small text than the fp32 XNNPACK one; that is a
 property of the export, the same as under react-native-executorch.
 
-## EasyOCR alphabets
+## :abc: EasyOCR alphabets
 
 The EasyOCR exports are int8 (XNNPACK and Core ML) and read a printed page as below. Each page
 (`example/assets/ocr/<script>.png`, rendered by `scripts/make-ocr-sample.py`) carries a heading,
@@ -223,7 +223,7 @@ fp16-detector difference each way. The other alphabets' misses are the usual int
 substitutions, and they differ between the two int8 exports (Cyrillic and Kannada are a little
 worse on Core ML, Latin, Chinese, Telugu and Kannada's heading better).
 
-## Known issue: the Vulkan exports
+## :warning: Known issue: the Vulkan exports
 
 On Android the registry's `DEFAULT` entries resolve to the Vulkan exports. They need the ExecuTorch
 Vulkan backend from react-native-executorch's **`0.10.6-libs`** native release or newer: with the
@@ -246,12 +246,12 @@ collapsed the two output slots into one; the serializer was fixed on ExecuTorch 
 the Android emulator (swiftshader), so use `XNNPACK` there. The EasyOCR Vulkan exports keep the
 recognizer on XNNPACK and read exactly as the XNNPACK ones.
 
-## API reference
+## :page_with_curl: API reference
 
 The full API reference, generated from the source, is at
 [software-mansion-labs.github.io/react-native-ocr](https://software-mansion-labs.github.io/react-native-ocr/).
 
-## Example app
+## :iphone: Example app
 
 `example/` is an Expo app with a screen per feature: **PaddleOCR parity** reads a bundled page
 with this package and with react-native-executorch's own pipeline on the same export and compares
@@ -262,7 +262,7 @@ reads a paper-like page region by region; **Document helpers** runs orientation,
 structure on bundled pages or a photo from the camera; **Vulkan diagnostics** (Android) loads
 Vulkan exports one at a time to attribute a crash; **Native spike** self-tests the native module.
 
-## Development
+## :hammer_and_wrench: Development
 
 ```sh
 yarn install
@@ -275,7 +275,7 @@ yarn docs              # the API reference, into docs/
 See `CONTRIBUTING.md` for the repository layout, the native build, the sample pages and the
 release process.
 
-## License
+## :page_facing_up: License
 
 MIT
 
