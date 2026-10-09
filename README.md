@@ -1,5 +1,7 @@
 # @swmansion/react-native-ocr
 
+![header](.github/assets/header.svg)
+
 Advanced on-device OCR for React Native, built on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): EasyOCR
 and PaddleOCR text detection and recognition, vertical text, document layout, page orientation,
