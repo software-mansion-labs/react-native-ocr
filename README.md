@@ -204,7 +204,10 @@ carry two vertical columns, read with `vertical: true`. "Lines" counts lines rea
 identical on the iOS simulator, the Android emulator and a Galaxy S23; Core ML results are from
 an iPhone 17 (the iOS `DEFAULT`), where a page takes 105 to 225 ms against 360 to 720 ms on the
 simulator's XNNPACK; Vulkan results are from the Galaxy S23 (the Android `DEFAULT`, needs the
-`0.10.6-libs` native release, see below).
+`0.10.6-libs` native release, see below). On the S23 (Release build) a page takes 0.8 to 1.6 s on
+XNNPACK and 1.0 to 2.1 s on Vulkan, the vertical and CJK pages being the slow ones: the Vulkan
+export only moves the CRAFT detector to the GPU and keeps the recognizer on XNNPACK, so for
+EasyOCR it is the slower of the two.
 
 | Alphabet | XNNPACK lines | XNNPACK chars | Core ML lines | Core ML chars | Vulkan lines | Vulkan chars | What goes wrong on XNNPACK                                           |
 | -------- | ------------- | ------------- | ------------- | ------------- | ------------ | ------------ | -------------------------------------------------------------------- |
