@@ -396,7 +396,6 @@ export default function NativeSpikeScreen() {
       style={commonStyles.container}
       contentContainerStyle={commonStyles.contentContainer}
     >
-      <Text style={commonStyles.title}>Native spike</Text>
       <Text style={commonStyles.description}>
         platform: {Platform.OS} · isEmulator: {String(isEmulator())}
       </Text>

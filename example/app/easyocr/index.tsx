@@ -50,7 +50,7 @@ type SampleKey =
   | 'kannada';
 const SAMPLES: { key: SampleKey; title: string; vertical: boolean; language?: Language }[] = [
   { key: 'sample', title: 'Page', vertical: false },
-  { key: 'vertical', title: 'Vertical', vertical: true },
+  { key: 'vertical', title: 'Vertical page', vertical: true },
   { key: 'cyrillic', title: 'Cyrillic', vertical: false, language: 'CYRILLIC' },
   { key: 'latin', title: 'Latin', vertical: false, language: 'LATIN' },
   { key: 'japanese', title: 'Japanese', vertical: true, language: 'JAPANESE' },
@@ -331,10 +331,16 @@ export default function EasyOcrScreen() {
       </ScrollView>
       <View style={commonStyles.buttonRow}>
         <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>vertical</Text>
+          <Text style={styles.switchLabel}>vertical pass</Text>
           <Switch value={vertical} onValueChange={setVertical} disabled={busy} />
         </View>
       </View>
+      <Text style={styles.hint}>
+        The page row picks the test image; “Vertical page” is the one with upright glyph columns.
+        The switch is the per-run option vertical: true, which also reads text stacked top to
+        bottom. Picking a page resets the switch to that page’s default, so you can run any page
+        with the pass on or off and compare.
+      </Text>
       <ModelStatus
         isReady={isReady}
         downloadProgress={downloadProgress}
@@ -407,6 +413,13 @@ const styles = StyleSheet.create({
   language: { marginRight: theme.spacing.small },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.small },
   switchLabel: { fontSize: 13, color: theme.colors.textSecondary },
+  hint: {
+    alignSelf: 'stretch',
+    fontSize: 12,
+    lineHeight: 17,
+    color: theme.colors.textMuted,
+    marginBottom: theme.spacing.large,
+  },
   verdict: {
     alignSelf: 'stretch',
     backgroundColor: theme.colors.cardBackground,

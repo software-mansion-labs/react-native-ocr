@@ -208,6 +208,7 @@ export default function LayoutScreen() {
       style={commonStyles.container}
       contentContainerStyle={commonStyles.contentContainer}
     >
+      <Text style={styles.rowLabel}>OCR model</Text>
       <View style={commonStyles.buttonRow}>
         {BACKENDS.map((key) => (
           <Button
@@ -219,8 +220,14 @@ export default function LayoutScreen() {
           />
         ))}
       </View>
-      <View style={commonStyles.buttonRow}>
+      <View style={styles.labelRow}>
         <Text style={styles.switchLabel}>layout model</Text>
+        <View style={styles.switchRow}>
+          <Text style={styles.switchLabel}>layout</Text>
+          <Switch value={layoutOn} onValueChange={setLayoutOn} disabled={busy} />
+        </View>
+      </View>
+      <View style={commonStyles.buttonRow}>
         {BACKENDS.map((key) => (
           <Button
             key={key}
@@ -230,10 +237,6 @@ export default function LayoutScreen() {
             disabled={busy || !layoutOn}
           />
         ))}
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>layout</Text>
-          <Switch value={layoutOn} onValueChange={setLayoutOn} disabled={busy} />
-        </View>
       </View>
       <ModelStatus
         isReady={isReady}
@@ -314,6 +317,19 @@ export default function LayoutScreen() {
 const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.small },
   switchLabel: { fontSize: 13, color: theme.colors.textSecondary },
+  rowLabel: {
+    alignSelf: 'stretch',
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.small,
+  },
+  labelRow: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.small,
+  },
   verdict: {
     alignSelf: 'stretch',
     backgroundColor: theme.colors.cardBackground,

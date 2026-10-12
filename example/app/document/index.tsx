@@ -383,6 +383,7 @@ export default function DocumentScreen() {
       style={commonStyles.container}
       contentContainerStyle={commonStyles.contentContainer}
     >
+      <Text style={styles.rowLabel}>OCR model</Text>
       <View style={commonStyles.buttonRow}>
         {BACKENDS.map((key) => (
           <Button
@@ -394,8 +395,8 @@ export default function DocumentScreen() {
           />
         ))}
       </View>
+      <Text style={styles.rowLabel}>helper model</Text>
       <View style={commonStyles.buttonRow}>
-        <Text style={styles.switchLabel}>helper model</Text>
         {BACKENDS.map((key) => (
           <Button
             key={key}
@@ -406,7 +407,7 @@ export default function DocumentScreen() {
           />
         ))}
       </View>
-      <View style={commonStyles.buttonRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.samples}>
         {SAMPLES.map((s) => (
           <Button
             key={s.key}
@@ -414,6 +415,7 @@ export default function DocumentScreen() {
             variant={s.key === sample ? 'primary' : 'secondary'}
             onPress={() => pickSample(s.key)}
             disabled={busy}
+            style={styles.sample}
           />
         ))}
         <Button
@@ -421,15 +423,17 @@ export default function DocumentScreen() {
           variant={sample === 'photo' ? 'primary' : 'secondary'}
           onPress={() => pickPhoto(false)}
           disabled={busy}
+          style={styles.sample}
         />
         <Button
           title="Camera…"
           variant="secondary"
           onPress={() => pickPhoto(true)}
           disabled={busy}
+          style={styles.sample}
         />
-      </View>
-      <View style={commonStyles.buttonRow}>
+      </ScrollView>
+      <View style={styles.switches}>
         {(['orientation', 'dewarp', 'layout', 'tables'] as const).map((key) => (
           <View key={key} style={styles.switchRow}>
             <Text style={styles.switchLabel}>{key}</Text>
@@ -551,8 +555,24 @@ export default function DocumentScreen() {
 }
 
 const styles = StyleSheet.create({
+  samples: { alignSelf: 'stretch', flexGrow: 0, marginBottom: theme.spacing.medium },
+  sample: { marginRight: theme.spacing.small },
+  switches: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: theme.spacing.large,
+    rowGap: theme.spacing.small,
+    marginBottom: theme.spacing.large,
+  },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.small },
   switchLabel: { fontSize: 13, color: theme.colors.textSecondary },
+  rowLabel: {
+    alignSelf: 'stretch',
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.small,
+  },
   verdict: {
     alignSelf: 'stretch',
     backgroundColor: theme.colors.cardBackground,

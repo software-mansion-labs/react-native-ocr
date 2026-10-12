@@ -5,7 +5,7 @@
  * starts: after a crash, the last line in the device log names the culprit.
  */
 import { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { download, loadModel, tensor, wrapAsync, type Model } from 'react-native-executorch';
 import { models } from '@swmansion/react-native-ocr';
 import { Button } from '../../components/Button';
@@ -100,39 +100,41 @@ export default function VulkanCheckScreen() {
       <Text style={commonStyles.description}>
         Tap top to bottom. A crash closes the app; the device log then names the step.
       </Text>
-      {OTHER_MODELS.map(({ name, url }) => (
+      <View style={styles.steps}>
+        {OTHER_MODELS.map(({ name, url }) => (
+          <Button
+            key={name}
+            title={`Load ${name}`}
+            variant="secondary"
+            disabled={busy}
+            onPress={() => step(`load ${name}`, async () => loadEager(await download(url)))}
+          />
+        ))}
         <Button
-          key={name}
-          title={`Load ${name}`}
-          variant="secondary"
-          disabled={busy}
-          onPress={() => step(`load ${name}`, async () => loadEager(await download(url)))}
-        />
-      ))}
-      <Button
-        title="PP-OCRv6: open without loading methods"
-        disabled={busy}
-        onPress={() =>
-          step('PP-OCRv6 lazy open', async () => {
-            ocrModel.current?.dispose();
-            ocrModel.current = await loadLazy(await download(OCR_URL));
-            return Object.keys(ocrModel.current.schema).join(', ');
-          })
-        }
-      />
-      {['recognize', 'detect'].map((method) => (
-        <Button
-          key={method}
-          title={`PP-OCRv6: run ${method}`}
+          title="PP-OCRv6: open without loading methods"
           disabled={busy}
           onPress={() =>
-            step(`PP-OCRv6 ${method}`, async () => {
-              if (!ocrModel.current) throw new Error('open the model first');
-              return runMethod(ocrModel.current, method);
+            step('PP-OCRv6 lazy open', async () => {
+              ocrModel.current?.dispose();
+              ocrModel.current = await loadLazy(await download(OCR_URL));
+              return Object.keys(ocrModel.current.schema).join(', ');
             })
           }
         />
-      ))}
+        {['recognize', 'detect'].map((method) => (
+          <Button
+            key={method}
+            title={`PP-OCRv6: run ${method}`}
+            disabled={busy}
+            onPress={() =>
+              step(`PP-OCRv6 ${method}`, async () => {
+                if (!ocrModel.current) throw new Error('open the model first');
+                return runMethod(ocrModel.current, method);
+              })
+            }
+          />
+        ))}
+      </View>
       {lines.map((line, i) => (
         <Text key={i} style={styles.line}>
           {line}
@@ -143,6 +145,11 @@ export default function VulkanCheckScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Same width for every step and a gap between them.
+  steps: {
+    width: '100%',
+    gap: theme.spacing.medium,
+  },
   line: {
     alignSelf: 'stretch',
     fontSize: 12,
