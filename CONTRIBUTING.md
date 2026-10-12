@@ -1,6 +1,102 @@
 # Contributing
 
-## Layout
+Contributions are always welcome, no matter how large or small!
+
+We want this community to be friendly and respectful to each other. Please follow it in all your
+interactions with the project. Before contributing, please read the
+[code of conduct](./CODE_OF_CONDUCT.md).
+
+## Development workflow
+
+This project is a monorepo managed using [Yarn workspaces](https://yarnpkg.com/features/workspaces).
+It contains the following packages:
+
+- The library package in the root directory.
+- An example app in the `example/` directory.
+
+To get started with the project, run `yarn` in the root directory to install the required
+dependencies for each package:
+
+```sh
+yarn
+```
+
+> Since the project relies on Yarn workspaces, you cannot use [`npm`](https://github.com/npm/cli)
+> for development.
+
+The install also runs react-native-executorch's postinstall, which downloads its native ExecuTorch
+libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.json`. This
+repository pins that to `0.10.6-libs` (the Vulkan backend rebuilt with the Adreno
+pipeline-creation fix) on top of the published `react-native-executorch@0.10.5`, which still
+points at `0.10.4-libs`, through a Yarn patch (`.yarn/patches/`, wired in `resolutions`). Drop the
+patch once an npm release of react-native-executorch pins `0.10.6` or later itself. The published
+package does not carry the pin; apps get the libraries their own react-native-executorch version
+pins.
+
+The [example app](/example/) demonstrates usage of the library. You need to run it to test any
+changes you make.
+
+It is configured to use the local version of the library, so any changes you make to the library's
+source code will be reflected in the example app. Changes to the library's JavaScript code will be
+reflected in the example app without a rebuild, but native code changes will require a rebuild of
+the example app. The example is an Expo project: `expo run:*` generates `example/ios` and
+`example/android`, which are git-ignored. Yarn creates no `node_modules` link for the root
+workspace, so `example/react-native.config.js` points autolinking at the repository root
+explicitly and Metro resolves the library through the Babel alias `react-native-builder-bob` adds
+in `example/babel.config.js`.
+
+You can use various commands from the root directory to work with the project.
+
+To start the packager:
+
+```sh
+yarn example start
+```
+
+If another Metro already holds port 8081, pass `--port` to the command.
+
+To run the example app on Android:
+
+```sh
+yarn example android
+```
+
+To run the example app on iOS:
+
+```sh
+yarn example ios
+```
+
+To confirm that the app is running with the new architecture, you can check the Metro logs for a
+message like this:
+
+```sh
+Running "main" with {"fabric":true,"initialProps":{},"rootTag":1}
+```
+
+Note the `"fabric":true` property.
+
+Make sure your code passes TypeScript and ESLint. Run the following to verify:
+
+```sh
+yarn typecheck
+yarn lint
+```
+
+To fix formatting errors, run the following:
+
+```sh
+yarn lint --fix
+yarn format
+```
+
+Remember to add tests for your change if possible. Run the unit tests by:
+
+```sh
+yarn test
+```
+
+### Repository layout
 
 ```
 src/            TypeScript pipeline (published)
@@ -13,43 +109,7 @@ example/        Expo app used for manual verification on devices
 __tests__/      Jest suites, running against a JS fake of the native ops
 ```
 
-## Setup
-
-```sh
-yarn install          # also runs react-native-executorch's native-lib download
-yarn example ios      # builds and runs the example on a simulator
-yarn example android  # builds and runs the example on a device/emulator
-```
-
-react-native-executorch downloads its native ExecuTorch libraries from a GitHub release pinned by
-`nativeLibsVersion` in its `package.json`. This repository pins that to `0.10.6-libs` (the
-Vulkan backend rebuilt with the Adreno pipeline-creation fix) on top of the published
-`react-native-executorch@0.10.5`, which still points at `0.10.4-libs`, through a Yarn patch
-(`.yarn/patches/`, wired in `resolutions`). Drop the patch once an npm release of
-react-native-executorch pins `0.10.6` or later itself. The published package does not carry the
-pin; apps get the libraries their own react-native-executorch version pins.
-
-The example app is an Expo project; `expo run:*` generates `example/ios` and `example/android`,
-which are git-ignored. Yarn creates no `node_modules` link for the root workspace, so
-`example/react-native.config.js` points autolinking at the repository root explicitly and Metro
-resolves the library through the Babel alias `react-native-builder-bob` adds in
-`example/babel.config.js`. If another Metro already holds port 8081, pass `--port` to `expo run:*`.
-
-## Checks
-
-```sh
-yarn typecheck
-yarn lint
-yarn test
-yarn prepare          # bob build
-yarn test:native      # GoogleTest suites for the C++ kernels (see below)
-```
-
-Commits follow the Conventional Commits format (`feat:`, `fix:`, `chore:`, ...). Lefthook runs
-lint, typecheck, tests and formatting on staged files; `clang-format` formats C++ when installed
-(`brew install clang-format`).
-
-## Native code
+### Native code
 
 - OpenCV comes from react-native-executorch: the `opencv-rne` CocoaPod on iOS and the static
   libraries its postinstall downloads on Android. The app must declare the `ocr` feature.
@@ -67,6 +127,8 @@ lint, typecheck, tests and formatting on staged files; `clang-format` formats C+
   RTTI, would not notice).
 - Every op has a JavaScript fake in `__tests__/support/fakeRnOcr.ts` so the Jest suites run the
   TypeScript wrappers end to end. Add one whenever you add an op.
+- After adding or removing a file under `cpp/`, run `pod install` in `example/ios` before
+  `yarn example ios`; the Xcode project lists files explicitly. Android's CMake globs the tree.
 
 ### C++ tests
 
@@ -84,10 +146,9 @@ both, and `craft_ops.cpp` shows the one include that differs.
 
 When `node_modules` is present the same build also compiles the JSI layer (`cpp/ops/bindings.cpp`,
 `cpp/core/*`) against react-native's `jsi.h` without linking it, so a type error there shows up in
-seconds rather than in an Xcode or Gradle build. After adding or removing a file under `cpp/`, run
-`pod install` in `example/ios` before `yarn example ios`; the Xcode project lists files explicitly.
+seconds rather than in an Xcode or Gradle build.
 
-## Sample pages
+### Sample pages
 
 The pages under `example/assets/ocr/` and the text they carry (`expected.json`) come from
 `scripts/make-ocr-sample.py` (Pillow with raqm, NumPy, the macOS system fonts). Edit the script
@@ -95,13 +156,40 @@ rather than the images; it checks every character of the per-script pages agains
 alphabet in `src/charsets.ts`, so a line the model cannot read in principle never ends up as an
 expected line.
 
-## Docs
+### Docs
 
 `yarn docs` builds the API reference with typedoc into `docs/` (git-ignored). The `Docs` workflow
 builds it on every push to `main` and deploys it to GitHub Pages; the repository's Pages source
 must be set to "GitHub Actions" once.
 
-## Releasing
+### Commit message convention
+
+We follow the [conventional commits specification](https://www.conventionalcommits.org/en) for our
+commit messages:
+
+- `fix`: bug fixes, e.g. fix crash due to deprecated method.
+- `feat`: new features, e.g. add new method to the module.
+- `refactor`: code refactor, e.g. migrate from class components to hooks.
+- `docs`: changes into documentation, e.g. add usage example for the module.
+- `test`: adding or updating tests, e.g. add integration tests using detox.
+- `chore`: tooling changes, e.g. change CI config.
+
+Our pre-commit hooks verify that your commit message matches this format when committing.
+
+### Linting and tests
+
+[ESLint](https://eslint.org/), [Prettier](https://prettier.io/),
+[TypeScript](https://www.typescriptlang.org/)
+
+We use [TypeScript](https://www.typescriptlang.org/) for type checking,
+[ESLint](https://eslint.org/) with [Prettier](https://prettier.io/) for linting and formatting the
+code, [Jest](https://jestjs.io/) for testing the TypeScript and
+[GoogleTest](https://github.com/google/googletest) for testing the C++ kernels.
+
+Our pre-commit hooks verify that the linter and tests pass when committing; `clang-format` formats
+C++ when installed (`brew install clang-format`), and CI checks it.
+
+### Publishing to npm
 
 Releases are published from CI with the `Publish to npm` workflow (`workflow_dispatch`), which
 runs Software Mansion's shared `npm-package-publish` action: pick the release type, optionally an
@@ -116,5 +204,39 @@ yarn typecheck && yarn lint && yarn test && yarn test:native
 npm pack --dry-run      # check the file list: src, lib, android, ios, cpp (without tests), podspec
 ```
 
-`yarn release` (release-it) remains as a local fallback for someone with publish rights; use
-`--no-increment` when `package.json` already holds the version to publish.
+We also keep [release-it](https://github.com/release-it/release-it) as a local fallback for
+someone with publish rights. It handles common tasks like bumping version based on semver,
+creating tags and releases etc.:
+
+```sh
+yarn release                  # or: yarn release --no-increment, when package.json already holds the version
+```
+
+### Scripts
+
+The `package.json` file contains various scripts for common tasks:
+
+- `yarn`: setup project by installing dependencies.
+- `yarn typecheck`: type-check files with TypeScript.
+- `yarn lint`: lint files with ESLint.
+- `yarn format`: format files with Prettier.
+- `yarn test`: run unit tests with Jest.
+- `yarn test:native`: run the GoogleTest suites for the C++ kernels.
+- `yarn prepare`: build the library into `lib/` with react-native-builder-bob.
+- `yarn docs`: build the API reference with typedoc.
+- `yarn example start`: start the Metro server for the example app.
+- `yarn example android`: run the example app on Android.
+- `yarn example ios`: run the example app on iOS.
+
+### Sending a pull request
+
+> **Working on your first pull request?** You can learn how from this _free_ series:
+> [How to Contribute to an Open Source Project on GitHub](https://app.egghead.io/playlists/how-to-contribute-to-an-open-source-project-on-github).
+
+When you're sending a pull request:
+
+- Prefer small pull requests focused on one change.
+- Verify that linters and tests are passing.
+- Review the documentation to make sure it looks good.
+- For pull requests that change the API or implementation, discuss with maintainers first by
+  opening an issue.

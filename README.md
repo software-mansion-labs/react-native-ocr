@@ -1,5 +1,7 @@
 # @swmansion/react-native-ocr
 
+![header](.github/assets/header.svg)
+
 Advanced on-device OCR for React Native, built on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): EasyOCR
 and PaddleOCR text detection and recognition, vertical text, document layout, page orientation,
@@ -8,15 +10,17 @@ dewarping and table structure, all running on the device through ExecuTorch.
 > **Status: pre-release.** `0.1.0` is being prepared and nothing is published to npm yet; the
 > API below is what it will ship. `plan.md` holds the roadmap and the verification record.
 
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Models](#models)
-- [EasyOCR alphabets](#easyocr-alphabets)
-- [Known issue: the Vulkan exports](#known-issue-the-vulkan-exports)
-- [API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:rocket: Features](#rocket-features)
+- [:package: Installation](#package-installation)
+- [:books: Usage](#books-usage)
+- [:brain: Models](#brain-models)
+- [:abc: EasyOCR alphabets](#abc-easyocr-alphabets)
+- [:warning: Known issue: the Vulkan exports](#warning-known-issue-the-vulkan-exports)
+- [:page_with_curl: API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:handshake: Contributing](#handshake-contributing)
+- [:page_facing_up: License](#page_facing_up-license)
 
-## Features
+## :rocket: Features
 
 - Whole-page text detection and recognition with PaddleOCR PP-OCRv6 through `useOcr` and
   `createOcr`: oriented quads with text and confidence, in reading order, with the same results
@@ -39,7 +43,7 @@ dewarping and table structure, all running on the device through ExecuTorch.
   `padCornerMean`, `extractCraftTextBoxes`. Everything else runs on react-native-executorch's
   public API, and the whole pipeline runs on its worklet runtime.
 
-## Installation
+## :package: Installation
 
 ```sh
 yarn add @swmansion/react-native-ocr react-native-executorch
@@ -70,7 +74,7 @@ Requirements:
 Models download from Hugging Face on first use and are cached by react-native-executorch;
 `useOcr` reports `downloadProgress`.
 
-## Usage
+## :books: Usage
 
 ```tsx
 import { models, useOcr } from '@swmansion/react-native-ocr';
@@ -169,7 +173,7 @@ glyph gives the recognizer no context, so `O` and `0` or `l` and `I` can swap, a
 touch are only approximately separated. With PaddleOCR (DBNet, no glyph-level mode) stacks are
 read as clustered glyphs only.
 
-## Models
+## :brain: Models
 
 Every entry of the registry carries `XNNPACK`, `COREML` and `VULKAN` exports plus a `DEFAULT`
 that resolves to the fastest one the platform can run: Core ML on an iOS device, XNNPACK on the
@@ -188,27 +192,33 @@ published on Hugging Face by Software Mansion.
 The int8 Core ML PP-OCRv6 export detects less small text than the fp32 XNNPACK one; that is a
 property of the export, the same as under react-native-executorch.
 
-## EasyOCR alphabets
+## :abc: EasyOCR alphabets
 
-The EasyOCR exports are int8 (XNNPACK and Core ML) and read a printed page as below. Each page
+The EasyOCR exports are int8 on XNNPACK and Core ML; the Vulkan export runs the fp16 CRAFT
+detector on the GPU and the same int8 CRNN recognizer on XNNPACK. They read a printed page as
+below. Each page
 (`example/assets/ocr/<script>.png`, rendered by `scripts/make-ocr-sample.py`) carries a heading,
 a few lines of running text and a line with digits; the Japanese, Chinese and Korean pages also
 carry two vertical columns, read with `vertical: true`. "Lines" counts lines read exactly;
 "chars" is the character accuracy over the page (edit distance per line). XNNPACK results are
 identical on the iOS simulator, the Android emulator and a Galaxy S23; Core ML results are from
 an iPhone 17 (the iOS `DEFAULT`), where a page takes 105 to 225 ms against 360 to 720 ms on the
-simulator's XNNPACK.
+simulator's XNNPACK; Vulkan results are from the Galaxy S23 (the Android `DEFAULT`, needs the
+`0.10.6-libs` native release, see below). On the S23 (Release build) a page takes 0.8 to 1.6 s on
+XNNPACK and 1.0 to 2.1 s on Vulkan, the vertical and CJK pages being the slow ones: the Vulkan
+export only moves the CRAFT detector to the GPU and keeps the recognizer on XNNPACK, so for
+EasyOCR it is the slower of the two.
 
-| Alphabet | XNNPACK lines | XNNPACK chars | Core ML lines | Core ML chars | What goes wrong on XNNPACK                                           |
-| -------- | ------------- | ------------- | ------------- | ------------- | -------------------------------------------------------------------- |
-| English  | 7/11          | 97.8%         | 7/11          | 97.8%         | `snall`, `tlat`, `!` as `l`, a dropped period and a dropped space    |
-| Cyrillic | 2/7           | 95.5%         | 1/7           | 92.9%         | `ра` as Latin `pa`, `и` as `ӏ`, `л` as `Jт`, `₽` as `П`, `ї` as `і`  |
-| Latin    | 3/6           | 94.2%         | 4/6           | 97.1%         | `Ç` as `C`, `ö` as `Ö`, `,` as `;`, `M` as `^A`, a dropped period    |
-| Japanese | 8/8           | 100%          | 8/8           | 100%          | nothing, vertical columns included                                   |
-| Chinese  | 0/8           | 77.6%         | 6/8           | 94.8%         | common characters dropped outright (文 字 京 国 了 顾 春), see below |
-| Korean   | 6/8           | 94.4%         | 6/8           | 94.4%         | `뛰어넘는다` as `뒤어넘논다`, `을` as `올`, a dropped space          |
-| Telugu   | 5/6           | 99.0%         | 6/6           | 100%          | one dropped space                                                    |
-| Kannada  | 2/6           | 96.1%         | 4/6           | 93.1%         | `ಠ` as `7`, a dropped conjunct, a doubled space and a doubled virama |
+| Alphabet | XNNPACK lines | XNNPACK chars | Core ML lines | Core ML chars | Vulkan lines | Vulkan chars | What goes wrong on XNNPACK                                           |
+| -------- | ------------- | ------------- | ------------- | ------------- | ------------ | ------------ | -------------------------------------------------------------------- |
+| English  | 7/11          | 97.8%         | 7/11          | 97.8%         | 7/11         | 97.8%        | `snall`, `tlat`, `!` as `l`, a dropped period and a dropped space    |
+| Cyrillic | 2/7           | 95.5%         | 1/7           | 92.9%         | 1/7          | 94.2%        | `ра` as Latin `pa`, `и` as `ӏ`, `л` as `Jт`, `₽` as `П`, `ї` as `і`  |
+| Latin    | 3/6           | 94.2%         | 4/6           | 97.1%         | 3/6          | 95.0%        | `Ç` as `C`, `ö` as `Ö`, `,` as `;`, `M` as `^A`, a dropped period    |
+| Japanese | 8/8           | 100%          | 8/8           | 100%          | 8/8          | 100%         | nothing, vertical columns included                                   |
+| Chinese  | 0/8           | 77.6%         | 6/8           | 94.8%         | 0/8          | 77.6%        | common characters dropped outright (文 字 京 国 了 顾 春), see below |
+| Korean   | 6/8           | 94.4%         | 6/8           | 94.4%         | 6/8          | 91.7%        | `뛰어넘는다` as `뒤어넘논다`, `을` as `올`, a dropped space          |
+| Telugu   | 5/6           | 99.0%         | 6/6           | 100%          | 4/6          | 98.1%        | one dropped space                                                    |
+| Kannada  | 2/6           | 96.1%         | 4/6           | 93.1%         | 2/6          | 90.2%        | `ಠ` as `7`, a dropped conjunct, a doubled space and a doubled virama |
 
 For Latin text prefer PP-OCRv6: its fp32 export read every line of the English page exactly where
 the int8 EasyOCR English model read about 98% of the characters. The **XNNPACK** simplified
@@ -217,13 +227,17 @@ two different fonts, horizontally and vertically) while it reads the rest of the
 the Core ML export of the same model reads every one of them (its two misses are dropped
 spaces), so this is a defect of the XNNPACK int8 quantization, still to be looked into on the export
 side, not something this package can correct; until then use the Core ML export on iOS and
-expect the drops on Android. The EasyOCR Vulkan exports (Galaxy S23) read the English,
-Cyrillic and Latin pages at 7/11 97.8%, 1/7 94.2% and 3/6 95.0%, the XNNPACK reads with one
-fp16-detector difference each way. The other alphabets' misses are the usual int8 CRNN
-substitutions, and they differ between the two int8 exports (Cyrillic and Kannada are a little
-worse on Core ML, Latin, Chinese, Telugu and Kannada's heading better).
+expect the drops on Android, on XNNPACK and Vulkan alike. The Vulkan export shares the int8
+CRNN with XNNPACK, so its texts are the XNNPACK reads where the fp16 CRAFT boxes agree
+(English, Japanese and Chinese are identical, the vertical English page reads better at 3/5
+95.3% against 90.7%); where the detector cuts a line differently the recognizer sees a
+different strip: Cyrillic reads `оплаты` as `оплатьІ`, Korean reads the vertical column
+`봄여름가을겨울` as `봄여근무가올겨울`, Telugu reads `పరీక్ష` as `పరీకష` and drops a space, and
+Kannada drops `ನರಿ` and a conjunct and triples a space. The other alphabets' misses are the
+usual int8 CRNN substitutions, and they differ between the two int8 exports (Cyrillic and
+Kannada are a little worse on Core ML, Latin, Chinese, Telugu and Kannada's heading better).
 
-## Known issue: the Vulkan exports
+## :warning: Known issue: the Vulkan exports
 
 On Android the registry's `DEFAULT` entries resolve to the Vulkan exports. They need the ExecuTorch
 Vulkan backend from react-native-executorch's **`0.10.6-libs`** native release or newer: with the
@@ -244,14 +258,15 @@ collapsed the two output slots into one; the serializer was fixed on ExecuTorch 
 2026-09-21 (pytorch/executorch#22898), so the export needs re-cutting with it, and until then use
 `PP_DOCLAYOUT.XNNPACK` on Android; and every Vulkan export crashes
 the Android emulator (swiftshader), so use `XNNPACK` there. The EasyOCR Vulkan exports keep the
-recognizer on XNNPACK and read exactly as the XNNPACK ones.
+recognizer on XNNPACK and read as the XNNPACK ones wherever the fp16 detector boxes agree (the
+table above has every page).
 
-## API reference
+## :page_with_curl: API reference
 
 The full API reference, generated from the source, is at
 [software-mansion-labs.github.io/react-native-ocr](https://software-mansion-labs.github.io/react-native-ocr/).
 
-## Example app
+## :iphone: Example app
 
 `example/` is an Expo app with a screen per feature: **PaddleOCR parity** reads a bundled page
 with this package and with react-native-executorch's own pipeline on the same export and compares
@@ -262,7 +277,7 @@ reads a paper-like page region by region; **Document helpers** runs orientation,
 structure on bundled pages or a photo from the camera; **Vulkan diagnostics** (Android) loads
 Vulkan exports one at a time to attribute a crash; **Native spike** self-tests the native module.
 
-## Development
+## :hammer_and_wrench: Development
 
 ```sh
 yarn install
@@ -272,9 +287,21 @@ yarn test:native       # GoogleTest suites for the C++ kernels, against the host
 yarn docs              # the API reference, into docs/
 ```
 
-See `CONTRIBUTING.md` for the repository layout, the native build, the sample pages and the
-release process.
+## :handshake: Contributing
 
-## License
+Contributions are welcome! See the [contributing guide](CONTRIBUTING.md) to learn about the
+development workflow, the repository layout, the native build, the sample pages and the release
+process.
+
+## :page_facing_up: License
 
 MIT
+
+## React Native OCR is created by Software Mansion
+
+Since 2012 [Software Mansion](https://swmansion.com) is a software agency with experience in
+building web and mobile apps. We are Core React Native Contributors and experts in dealing with
+all kinds of React Native issues. We can help you build your next dream product –
+[Hire us](https://swmansion.com/contact/projects?utm_source=react-native-ocr&utm_medium=readme).
+
+[![swm](https://logo.swmansion.com/logo?color=white&variant=desktop&width=150&tag=react-native-ocr-github 'Software Mansion')](https://swmansion.com)
