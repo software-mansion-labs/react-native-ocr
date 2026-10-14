@@ -7,7 +7,11 @@
  * wraps the group in `variants`, which adds the `DEFAULT` alias resolving to
  * the fastest export the current platform can run.
  */
-import { IMAGENET_NORM, type ObjectDetectorModel } from 'react-native-executorch';
+import {
+  IMAGENET_NORM,
+  models as rneModels,
+  type ObjectDetectorModel,
+} from 'react-native-executorch';
 import { alphabets, PPOCR_SYMBOLS } from './charsets';
 import { DOC_LAYOUT_LABELS, SLANET_STRUCTURE_VOCAB, type DocLayoutLabel } from './constants';
 import type { DocumentModelsConfig } from './document/types';
@@ -38,11 +42,8 @@ const PADDLE_PPOCRV6_OPTS: OcrModelOptions = {
 };
 
 // EasyOCR ships int8 on both CPU and ANE; its Vulkan build is fp16-dominated
-// (fp16 CRAFT on the GPU, int8 CRNN on XNNPACK). PP-OCRv6 keeps fp32 on
-// XNNPACK: a static-activation int8 detect computes garbage above ~960 px at
-// any calibration.
+// (fp16 CRAFT on the GPU, int8 CRNN on XNNPACK).
 const EASYOCR_PRECISION = { xnnpack: 'int8', coreml: 'int8', vulkan: 'fp16' } as const;
-const PPOCRV6_PRECISION = { xnnpack: 'fp32', coreml: 'int8', vulkan: 'fp16' } as const;
 // int8 loses whole boxes on PP-DocLayoutV3's RT-DETR head, so it stays unquantized.
 const DOCLAYOUT_PRECISION = { xnnpack: 'fp32', coreml: 'fp16', vulkan: 'fp16' } as const;
 const HELPERS_PRECISION = { xnnpack: 'int8', coreml: 'int8', vulkan: 'fp16' } as const;
@@ -66,10 +67,12 @@ const easyOcr = (lang: string, charset: string | readonly string[]) =>
     VULKAN: makeEasyOcr(lang, 'vulkan', charset),
   });
 
-const ppOcrV6 = (backend: OcrBackend): OcrModel => ({
-  modelPath:
-    `${BASE_URL}-pp-ocrv6/${VERSION_TAG}/${backend}/` +
-    `pp_ocrv6_${backend}_${PPOCRV6_PRECISION[backend]}.pte`,
+// PP-OCRv6 exports are react-native-executorch's own, so their URLs come from
+// its registry. XNNPACK takes the fp32 export: a static-activation int8 detect
+// computes garbage above ~960 px at any calibration.
+const RNE_PPOCRV6 = rneModels.ocr.PADDLE.PPOCRV6_SMALL;
+const ppOcrV6 = ({ modelPath }: { modelPath: string }): OcrModel => ({
+  modelPath,
   modelOpts: PADDLE_PPOCRV6_OPTS,
 });
 
@@ -142,9 +145,9 @@ export const models = {
      */
     PADDLE: {
       PPOCRV6_SMALL: variants({
-        XNNPACK: ppOcrV6('xnnpack'),
-        COREML: ppOcrV6('coreml'),
-        VULKAN: ppOcrV6('vulkan'),
+        XNNPACK: ppOcrV6(RNE_PPOCRV6.XNNPACK_FP32),
+        COREML: ppOcrV6(RNE_PPOCRV6.COREML),
+        VULKAN: ppOcrV6(RNE_PPOCRV6.VULKAN),
       }),
     },
   },
