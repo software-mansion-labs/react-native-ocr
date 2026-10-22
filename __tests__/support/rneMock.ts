@@ -247,3 +247,20 @@ export function setFakeRegisteredBackends(names: readonly string[]): void {
 export function getRegisteredBackends(): readonly string[] {
   return registeredBackends;
 }
+
+const PPOCRV6_URL =
+  'https://huggingface.co/software-mansion/react-native-executorch-pp-ocrv6/resolve/v0.10.0';
+
+/** The slice of react-native-executorch's registry `src/models.ts` reads. */
+export const models = {
+  ocr: {
+    PADDLE: {
+      PPOCRV6_SMALL: {
+        XNNPACK: { modelPath: `${PPOCRV6_URL}/xnnpack/pp_ocrv6_xnnpack_int8.pte` },
+        XNNPACK_FP32: { modelPath: `${PPOCRV6_URL}/xnnpack/pp_ocrv6_xnnpack_fp32.pte` },
+        COREML: { modelPath: `${PPOCRV6_URL}/coreml/pp_ocrv6_coreml_int8.pte` },
+        VULKAN: { modelPath: `${PPOCRV6_URL}/vulkan/pp_ocrv6_vulkan_fp16.pte` },
+      },
+    },
+  },
+};
