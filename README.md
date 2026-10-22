@@ -2,7 +2,6 @@
 
 <img width="1100" height="382" alt="image" src="https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730" />
 
-
 Document OCR for React Native on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): layout,
 tables, dewarping, page orientation, vertical text and EasyOCR alphabets, all on device.
