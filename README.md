@@ -1,6 +1,7 @@
 # @swmansion/react-native-ocr
 
-![header](.github/assets/header.svg)
+<img width="1100" height="382" alt="image" src="https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730" />
+
 
 Advanced on-device OCR for React Native, built on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): EasyOCR
