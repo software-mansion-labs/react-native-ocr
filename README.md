@@ -1,6 +1,6 @@
 # @swmansion/react-native-ocr
 
-<img width="1100" height="382" alt="image" src="https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730" />
+![React Native OCR](https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730)
 
 Document OCR for React Native on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): layout,
@@ -39,7 +39,7 @@ Use this package when you need what it leaves out.
 yarn add @swmansion/react-native-ocr react-native-executorch
 ```
 
-Set up react-native-executorch first (`react-native-executorch` 0.10.2+, iOS 17+, Android API 26+,
+Set up react-native-executorch first (`react-native-executorch` 0.10.6+, iOS 17+, Android API 26+,
 New Architecture, a development build on Expo), then enable its `ocr` feature in the app's
 `package.json` so OpenCV is downloaded for both packages:
 
@@ -88,8 +88,9 @@ app links it, else XNNPACK.
 
 ## :warning: Known issues
 
-- Vulkan exports need react-native-executorch's `0.10.6-libs` native release or newer; older ones
-  crash in `loadModel`. Until an npm release pins it, use the `XNNPACK` entries on Android.
+- Vulkan exports crash in `loadModel` on react-native-executorch older than 0.10.6 (its
+  `0.10.6-libs` native release fixes Adreno 720/740); on older versions use the `XNNPACK` entries on
+  Android.
 - `PP_DOCLAYOUT.VULKAN` fails at execute until it is re-exported; use `PP_DOCLAYOUT.XNNPACK`.
 - Vulkan exports crash the Android emulator; use `XNNPACK` there.
 - The XNNPACK simplified Chinese EasyOCR export drops some common characters; Core ML reads them.

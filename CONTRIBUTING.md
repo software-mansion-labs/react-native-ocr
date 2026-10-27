@@ -25,13 +25,10 @@ yarn
 > for development.
 
 The install also runs react-native-executorch's postinstall, which downloads its native ExecuTorch
-libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.json`. This
-repository pins that to `0.10.6-libs` (the Vulkan backend rebuilt with the Adreno
-pipeline-creation fix) on top of the published `react-native-executorch@0.10.5`, which still
-points at `0.10.4-libs`, through a Yarn patch (`.yarn/patches/`, wired in `resolutions`). Drop the
-patch once an npm release of react-native-executorch pins `0.10.6` or later itself. The published
-package does not carry the pin; apps get the libraries their own react-native-executorch version
-pins.
+libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.json`
+(`0.10.6-libs` since react-native-executorch 0.10.6, the first release whose Vulkan backend carries
+the Adreno pipeline-creation fix). Apps get the libraries their own react-native-executorch version
+pins, which is why the peer dependency starts at 0.10.6.
 
 The [example app](/example/) demonstrates usage of the library. You need to run it to test any
 changes you make.
@@ -192,12 +189,16 @@ C++ when installed (`brew install clang-format`), and CI checks it.
 ### Publishing to npm
 
 Releases are published from CI with the `Publish to npm` workflow (`workflow_dispatch`), which
-runs Software Mansion's shared `npm-package-publish` action: pick the release type, optionally an
-explicit version, and leave `dry-run` on for a rehearsal. The action resolves the version, runs
-`npm pack` (which runs `bob build` through `prepare`), uploads the tarball as a workflow artifact,
-publishes with npm provenance, and with `perform-git-operations` on commits the version and pushes
-the `vX.Y.Z` tag. The package has to allow the workflow as a trusted publisher on npm. Before a
-release:
+runs Software Mansion's shared `npm-package-publish` action: pick the release type, give the
+version explicitly, and leave `dry-run` on for a rehearsal. A stable release without an explicit
+version infers it from a `x.y-stable` branch name, so a run from `main` fails without one. The
+action resolves the version, runs `npm pack` (which runs `bob build` through `prepare`), uploads
+the tarball as a workflow artifact, publishes with npm provenance, and with
+`perform-git-operations` on pushes the `vX.Y.Z` tag (the release commit is skipped on `main`, so
+a protected `main` does not block it). The package has to allow the workflow as a trusted
+publisher on npm; that setting lives in the package's settings on npmjs.com, so the very first
+version is published by hand (see release-it below) by someone with publish rights in the
+`@swmansion` organisation, and the trusted publisher is added right after. Before a release:
 
 ```sh
 yarn typecheck && yarn lint && yarn test && yarn test:native
