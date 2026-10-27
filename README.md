@@ -1,5 +1,7 @@
 # @swmansion/react-native-ocr
 
+<img width="1100" height="382" alt="image" src="https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730" />
+
 Document OCR for React Native on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): layout,
 tables, dewarping, page orientation, vertical text and EasyOCR alphabets, all on device.
@@ -10,14 +12,16 @@ Use this package when you need what it leaves out.
 
 > **Status: pre-release.** Nothing is published to npm yet.
 
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Models](#models)
-- [Known issues](#known-issues)
-- [API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:rocket: Features](#rocket-features)
+- [:package: Installation](#package-installation)
+- [:books: Usage](#books-usage)
+- [:brain: Models](#brain-models)
+- [:warning: Known issues](#warning-known-issues)
+- [:page_with_curl: API reference](https://software-mansion-labs.github.io/react-native-ocr/)
+- [:handshake: Contributing](#handshake-contributing)
+- [:page_facing_up: License](#page_facing_up-license)
 
-## Features
+## :rocket: Features
 
 - **Document layout** with PP-DocLayoutV3: 25 region types, each region read on its own crop,
   results as reading-ordered blocks.
@@ -29,7 +33,7 @@ Use this package when you need what it leaves out.
 - **Reading order** that handles multi-column pages under a page-wide title.
 - XNNPACK, Core ML and Vulkan exports with a per-platform `DEFAULT`.
 
-## Installation
+## :package: Installation
 
 ```sh
 yarn add @swmansion/react-native-ocr react-native-executorch
@@ -47,7 +51,7 @@ New Architecture, a development build on Expo), then enable its `ocr` feature in
 }
 ```
 
-## Usage
+## :books: Usage
 
 ```tsx
 import { models, useOcr, type DocLayoutLabel } from '@swmansion/react-native-ocr';
@@ -68,7 +72,7 @@ for (const { regionType, text, isTable, tableHtml } of blocks) {
 corrected frame that all coordinates refer to. For vertical text, use an EasyOCR model and pass
 `{ vertical: true }` to `runOcr`. Without React, use `createOcr(config)`.
 
-## Models
+## :brain: Models
 
 | Registry entry                        | What it is                                              | XNNPACK | Core ML | Vulkan |
 | ------------------------------------- | ------------------------------------------------------- | ------- | ------- | ------ |
@@ -82,7 +86,7 @@ corrected frame that all coordinates refer to. For vertical text, use an EasyOCR
 `DEFAULT` picks Core ML on an iOS device, XNNPACK on the simulator, and Vulkan on Android when the
 app links it, else XNNPACK.
 
-## Known issues
+## :warning: Known issues
 
 - Vulkan exports need react-native-executorch's `0.10.6-libs` native release or newer; older ones
   crash in `loadModel`. Until an npm release pins it, use the `XNNPACK` entries on Android.
@@ -90,6 +94,21 @@ app links it, else XNNPACK.
 - Vulkan exports crash the Android emulator; use `XNNPACK` there.
 - The XNNPACK simplified Chinese EasyOCR export drops some common characters; Core ML reads them.
 
-## License
+## :handshake: Contributing
+
+Contributions are welcome! See the [contributing guide](CONTRIBUTING.md) to learn about the
+development workflow, the repository layout, the native build, the sample pages and the release
+process.
+
+## :page_facing_up: License
 
 MIT
+
+## React Native OCR is created by Software Mansion
+
+Since 2012 [Software Mansion](https://swmansion.com) is a software agency with experience in
+building web and mobile apps. We are Core React Native Contributors and experts in dealing with
+all kinds of React Native issues. We can help you build your next dream product –
+[Hire us](https://swmansion.com/contact/projects?utm_source=react-native-ocr&utm_medium=readme).
+
+[![swm](https://logo.swmansion.com/logo?color=white&variant=desktop&width=150&tag=react-native-ocr-github 'Software Mansion')](https://swmansion.com)
