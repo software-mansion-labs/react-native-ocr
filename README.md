@@ -1,4 +1,4 @@
-# @swmansion/react-native-ocr
+# React Native OCR
 
 ![React Native OCR](https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730)
 
