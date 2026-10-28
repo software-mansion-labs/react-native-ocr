@@ -96,9 +96,8 @@ function describeBlock(block: DocumentBlock<DocLayoutLabel>): string {
 export default function LayoutScreen() {
   const image = useImage(require('../../assets/ocr/layout.png'));
   // `/layout?backend=COREML&layoutBackend=XNNPACK&layout=0` opens the screen
-  // in that state. The layout model has its own backend so its accelerated
-  // export can be tried while the OCR model stays on the CPU (PP-OCRv6's
-  // Vulkan export crashes at load, see the parity screen).
+  // in that state. The layout model has its own backend so each export can be
+  // tried on its own: a GPU failure then names the model, not the pair.
   const params = useLocalSearchParams<{
     backend?: string;
     layoutBackend?: string;

@@ -91,7 +91,6 @@ app links it, else XNNPACK.
 - Vulkan exports crash in `loadModel` on react-native-executorch older than 0.10.6 (its
   `0.10.6-libs` native release fixes Adreno 720/740); on older versions use the `XNNPACK` entries on
   Android.
-- `PP_DOCLAYOUT.VULKAN` fails at execute until it is re-exported; use `PP_DOCLAYOUT.XNNPACK`.
 - Vulkan exports crash the Android emulator; use `XNNPACK` there.
 - The XNNPACK simplified Chinese EasyOCR export drops some common characters; Core ML reads them.
 
