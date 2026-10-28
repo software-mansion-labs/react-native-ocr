@@ -27,8 +27,8 @@ describe('models registry', () => {
   it('points every entry at a .pte under its Hugging Face tag', () => {
     const all = leaves(models);
     // 8 EasyOCR alphabets + PP-OCRv6 + PP-DocLayout + PP-Helpers, 3 backends
-    // plus DEFAULT each.
-    expect(all).toHaveLength(11 * 4);
+    // plus DEFAULT each, and PP-OCRv6's second XNNPACK export.
+    expect(all).toHaveLength(11 * 4 + 1);
     const offenders = all
       .filter(([, leaf]) => !URL_SHAPE.test(leaf.modelPath))
       .map(([path, leaf]) => `${path}: ${leaf.modelPath}`);
@@ -50,6 +50,9 @@ describe('models registry', () => {
       'zh_sim/xnnpack/easy_ocr_zh_sim_xnnpack_int8.pte'
     );
     expect(tail(models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK)).toBe(
+      'v0.10.0/xnnpack/pp_ocrv6_xnnpack_int8.pte'
+    );
+    expect(tail(models.ocr.PADDLE.PPOCRV6_SMALL.XNNPACK_FP32)).toBe(
       'v0.10.0/xnnpack/pp_ocrv6_xnnpack_fp32.pte'
     );
     expect(tail(models.ocr.PADDLE.PPOCRV6_SMALL.COREML)).toBe(

@@ -9,7 +9,7 @@
  */
 import { Canvas, Image as SkiaImage, Path, Skia, useImage } from '@shopify/react-native-skia';
 import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -25,7 +25,7 @@ import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';
 import { saveCraftFixture, saveLastRun } from '../../craftFixture';
 import { commonStyles, theme } from '../../theme';
-import { skImageToBuffer } from '../../utils';
+import { resolveModelOverride, skImageToBuffer } from '../../utils';
 
 type Language = keyof typeof models.ocr.EASYOCR;
 const LANGUAGES = Object.keys(models.ocr.EASYOCR) as Language[];
@@ -170,13 +170,21 @@ export default function EasyOcrScreen() {
   // `/easyocr?lang=KOREAN&backend=COREML&sample=vertical&save=1` opens the
   // screen in that state (and saves the heatmap after the first run), so a
   // run can be scripted without tapping. `sample=korean` alone picks the
-  // Korean model too; `lang` overrides it.
+  // Korean model too; `lang` overrides it. `modelUrl` swaps the export for
+  // another file (an unpublished candidate served over HTTP), keeping the
+  // registry entry's options.
   const params = useLocalSearchParams<{
     lang?: string;
     backend?: string;
     sample?: string;
     save?: string;
+    modelUrl?: string;
+    runs?: string;
   }>();
+  // `runs=N` runs the page N times back to back once the model is ready, so
+  // a timing can be taken without tapping; `last-run.json` lists every time.
+  const runs = Math.max(1, Number(params.runs) || 1);
+  const msAll = useRef<number[]>([]);
   const initialSample = SAMPLES.find((s) => s.key === params.sample) ?? SAMPLES[0]!;
   const [language, setLanguage] = useState<Language>(
     LANGUAGES.find((l) => l === params.lang) ?? initialSample.language ?? 'ENGLISH'
@@ -186,7 +194,11 @@ export default function EasyOcrScreen() {
   );
   const [sample, setSample] = useState<SampleKey>(initialSample.key);
   const [vertical, setVertical] = useState(initialSample.vertical);
-  const model = models.ocr.EASYOCR[language][backend];
+  const model = useMemo(() => {
+    const entry = models.ocr.EASYOCR[language][backend];
+    const override = resolveModelOverride(params.modelUrl);
+    return override ? { ...entry, modelPath: override } : entry;
+  }, [language, backend, params.modelUrl]);
   const { isReady, error, downloadProgress, resource, runOcr } = useOcr(model);
   const image = pages[sample];
 
@@ -232,9 +244,15 @@ export default function EasyOcrScreen() {
           `${(next.grade.charAccuracy * 100).toFixed(1)}% chars, ` +
           `${texts.length} detections, ${ms} ms: ${JSON.stringify(texts)}`
       );
+      msAll.current.push(ms);
       setOutcome(next);
       // Best effort: the run as a file, for inspection off the device.
-      saveLastRun(next).catch(() => {});
+      saveLastRun({
+        screen: 'easyocr',
+        ...next,
+        msAll: [...msAll.current],
+        models: { ocr: model.modelPath },
+      }).catch(() => {});
     } catch (e) {
       const err = e as { name?: string; code?: string; message?: string };
       setFailure(`${err.name ?? 'Error'} ${err.code ?? ''} ${err.message ?? String(e)}`);
@@ -270,7 +288,13 @@ export default function EasyOcrScreen() {
   // the pass or the backend changes.
   useEffect(() => {
     setOutcome(undefined);
-    if (ready) run().then(() => (params.save === '1' ? saveFixture() : undefined));
+    if (ready) {
+      msAll.current = [];
+      (async () => {
+        for (let i = 0; i < runs; i++) await run();
+        if (params.save === '1') await saveFixture();
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, sample, vertical]);
 

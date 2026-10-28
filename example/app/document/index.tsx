@@ -46,7 +46,7 @@ import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';
 import { saveLastRun } from '../../craftFixture';
 import { commonStyles, theme } from '../../theme';
-import { getImage, skImageToBuffer } from '../../utils';
+import { getImage, resolveModelOverride, skImageToBuffer } from '../../utils';
 
 type Backend = 'XNNPACK' | 'COREML' | 'VULKAN';
 const BACKENDS: Backend[] = ['XNNPACK', Platform.OS === 'ios' ? 'COREML' : 'VULKAN'];
@@ -190,6 +190,9 @@ export default function DocumentScreen() {
   // `dewarpRatio` overrides `dewarpMinVarianceRatio` (0 accepts every warp);
   // the curved page defaults to 0.1, since the flattened page keeps only about
   // a third of the variance of the photo once the dark table is cropped away.
+  // `modelUrl`, `helpersUrl` and `layoutUrl` swap the OCR, helper and layout
+  // exports for other files (unpublished candidates served over HTTP), keeping
+  // the registry entries' options.
   const params = useLocalSearchParams<{
     sample?: string;
     backend?: string;
@@ -199,7 +202,15 @@ export default function DocumentScreen() {
     tables?: string;
     dewarpRatio?: string;
     helpersBackend?: string;
+    modelUrl?: string;
+    helpersUrl?: string;
+    layoutUrl?: string;
+    runs?: string;
   }>();
+  // `runs=N` runs the page N times back to back once the models are ready, so
+  // a timing can be taken without tapping; `last-run.json` lists every time.
+  const runs = Math.max(1, Number(params.runs) || 1);
+  const msAll = useRef<number[]>([]);
   const initialSample = SAMPLES.find((s) => s.key === params.sample) ?? SAMPLES[0]!;
   const flag = (value: string | undefined, fallback: boolean) =>
     value === undefined ? fallback : value === '1';
@@ -235,17 +246,26 @@ export default function DocumentScreen() {
       : sample === 'curved' || sample === 'photo'
         ? PHOTO_DEWARP_RATIO
         : undefined;
-  const config = useMemo<OcrModel<DocLayoutLabel>>(
-    () => ({
-      ...models.ocr.PADDLE.PPOCRV6_SMALL[backend],
+  const modelUrl = resolveModelOverride(params.modelUrl);
+  const helpersUrl = resolveModelOverride(params.helpersUrl);
+  const layoutUrl = resolveModelOverride(params.layoutUrl);
+  const config = useMemo<OcrModel<DocLayoutLabel>>(() => {
+    const ocr = models.ocr.PADDLE.PPOCRV6_SMALL[backend];
+    const helpers = models.documentModels.PP_HELPERS[helpersBackend];
+    const layout = models.layoutDetection.PP_DOCLAYOUT[backend];
+    return {
+      ...ocr,
+      ...(modelUrl ? { modelPath: modelUrl } : {}),
       documentModels: {
-        ...models.documentModels.PP_HELPERS[helpersBackend],
+        ...helpers,
+        ...(helpersUrl ? { modelPath: helpersUrl } : {}),
         ...(dewarpRatio === undefined ? {} : { dewarpMinVarianceRatio: dewarpRatio }),
       },
-      ...(stages.layout ? { layout: models.layoutDetection.PP_DOCLAYOUT[backend] } : {}),
-    }),
-    [backend, helpersBackend, stages.layout, dewarpRatio]
-  );
+      ...(stages.layout
+        ? { layout: layoutUrl ? { ...layout, modelPath: layoutUrl } : layout }
+        : {}),
+    };
+  }, [backend, helpersBackend, stages.layout, dewarpRatio, modelUrl, helpersUrl, layoutUrl]);
   const { isReady, error, downloadProgress, runOcr } = useOcr<DocLayoutLabel>(config);
 
   const setup =
@@ -282,6 +302,7 @@ export default function DocumentScreen() {
         tables: stages.tables,
       });
       const ms = Date.now() - started;
+      msAll.current.push(ms);
       const texts = result.detections.map((d) => d.text);
       const next: Outcome = {
         backend,
@@ -314,6 +335,12 @@ export default function DocumentScreen() {
         sample,
         stages,
         ms,
+        msAll: [...msAll.current],
+        models: {
+          ocr: config.modelPath,
+          helpers: config.documentModels?.modelPath,
+          layout: config.layout?.modelPath,
+        },
         frame: {
           width: result.image.width,
           height: result.image.height,
@@ -346,7 +373,12 @@ export default function DocumentScreen() {
   }, [runOcr]);
   useEffect(() => {
     setOutcome(undefined);
-    if (ready && loadedFor.current === config) run();
+    if (ready && loadedFor.current === config) {
+      msAll.current = [];
+      (async () => {
+        for (let i = 0; i < runs; i++) await run();
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, image, stages, runOcr, config]);
 
