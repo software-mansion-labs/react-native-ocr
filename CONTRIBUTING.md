@@ -153,6 +153,23 @@ rather than the images; it checks every character of the per-script pages agains
 alphabet in `src/charsets.ts`, so a line the model cannot read in principle never ends up as an
 expected line.
 
+### Scripted runs
+
+The EasyOCR and Document screens open in a given state from a deep link
+(`rnocr-example://easyocr?lang=KOREAN&backend=COREML&sample=vertical`,
+`rnocr-example://document?sample=table&backend=COREML&helpersBackend=COREML&layout=1&tables=1`)
+and run as soon as the models are ready, so a page can be measured without tapping. Two
+parameters exist for trying exports before they are published: `runs=N` runs the page N times
+back to back and lists every time in `Documents/last-run.json` (which already holds the last
+run's reads and grade), and `modelUrl`, plus `helpersUrl` and `layoutUrl` on the Document
+screen, swap a registry export for another file. The value is a URL, or a bare file name for a
+`.pte` pushed into the app's documents directory (`adb push`, or `xcrun devicectl device copy
+to --domain-type appDataContainer --domain-identifier <bundle id> --destination Documents/<file>`
+on an iPhone). `scripts/measure-page.sh <device> '<screen>?<query>' [runs]` drives the whole
+loop from the Mac: it relaunches the app, opens the link, waits for the runs and prints the warm
+median with the files the run used, for an iPhone UDID, the booted simulator or an adb serial
+(`APP_ID` overrides the bundle id).
+
 ### Docs
 
 `yarn docs` builds the API reference with typedoc into `docs/` (git-ignored). The `Docs` workflow

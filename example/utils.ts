@@ -2,6 +2,21 @@ import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { SkImage } from '@shopify/react-native-skia';
+import ReactNativeBlobUtil from 'react-native-blob-util';
+
+/**
+ * Resolves a `...Url` screen parameter that swaps a registry export for another
+ * file: a URL is used as is, a bare file name points into the app's documents
+ * directory (a file pushed there with `adb push` or `devicectl device copy to`).
+ * @param value - The parameter value, if any.
+ * @returns The model path, or `undefined` without a parameter.
+ */
+export const resolveModelOverride = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+  return /^[a-z][a-z0-9+.-]*:/i.test(value)
+    ? value
+    : `${ReactNativeBlobUtil.fs.dirs.DocumentDir}/${value}`;
+};
 
 /**
  * Converts a Skia image into the raw RGBA/HWC image buffer that
