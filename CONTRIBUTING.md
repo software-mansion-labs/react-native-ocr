@@ -25,10 +25,13 @@ yarn
 > for development.
 
 The install also runs react-native-executorch's postinstall, which downloads its native ExecuTorch
-libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.json`
-(`0.10.6-libs` since react-native-executorch 0.10.6, the first release whose Vulkan backend carries
-the Adreno pipeline-creation fix). Apps get the libraries their own react-native-executorch version
-pins, which is why the peer dependency starts at 0.10.6.
+libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.json` (`0.11.0-libs`
+for react-native-executorch 0.11.0). Apps get the libraries their own react-native-executorch
+version pins.
+
+The package's version follows react-native-executorch's: `@swmansion/react-native-ocr` 0.11.x is
+built and tested against react-native-executorch 0.11, which is also where its peer dependency
+starts. Bump both together when moving to a new react-native-executorch minor.
 
 The [example app](/example/) demonstrates usage of the library. You need to run it to test any
 changes you make.
