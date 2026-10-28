@@ -72,8 +72,11 @@ const easyOcr = (lang: string, charset: string | readonly string[]) =>
   });
 
 // PP-OCRv6 exports are react-native-executorch's own, so their URLs come from
-// its registry. XNNPACK takes the fp32 export: a static-activation int8 detect
-// computes garbage above ~960 px at any calibration.
+// its registry. XNNPACK takes its int8 export (int8 DBNet, fp32 SVTR), the
+// same file react-native-executorch defaults to: on the sample pages it reads
+// exactly what the fp32 one reads, within a few percent of its time on a
+// Galaxy S23, at 24 MB instead of 31 MB. The fp32 export stays reachable as
+// `XNNPACK_FP32` for a bit-exact detector.
 const RNE_PPOCRV6 = rneModels.ocr.PADDLE.PPOCRV6_SMALL;
 const ppOcrV6 = ({ modelPath }: { modelPath: string }): OcrModel => ({
   modelPath,
@@ -149,7 +152,8 @@ export const models = {
      */
     PADDLE: {
       PPOCRV6_SMALL: variants({
-        XNNPACK: ppOcrV6(RNE_PPOCRV6.XNNPACK_FP32),
+        XNNPACK: ppOcrV6(RNE_PPOCRV6.XNNPACK),
+        XNNPACK_FP32: ppOcrV6(RNE_PPOCRV6.XNNPACK_FP32),
         COREML: ppOcrV6(RNE_PPOCRV6.COREML),
         VULKAN: ppOcrV6(RNE_PPOCRV6.VULKAN),
       }),

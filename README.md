@@ -76,12 +76,13 @@ corrected frame that all coordinates refer to. For vertical text, use an EasyOCR
 
 | Registry entry                        | What it is                                              | XNNPACK | Core ML | Vulkan |
 | ------------------------------------- | ------------------------------------------------------- | ------- | ------- | ------ |
-| `models.ocr.PADDLE.PPOCRV6_SMALL`     | PP-OCRv6 small, react-native-executorch's export        | fp32    | int8    | fp16   |
+| `models.ocr.PADDLE.PPOCRV6_SMALL`     | PP-OCRv6 small, react-native-executorch's export        | int8²   | int8    | fp16   |
 | `models.ocr.EASYOCR.<ALPHABET>`       | EasyOCR, one per alphabet                               | int8    | int8    | fp16¹  |
 | `models.layoutDetection.PP_DOCLAYOUT` | PP-DocLayoutV3                                          | fp32    | fp16    | fp16   |
 | `models.documentModels.PP_HELPERS`    | Orientation, UVDoc dewarp and SLANet tables in one file | int8    | int8    | fp16   |
 
 ¹ CRAFT detector on Vulkan, CRNN recognizer on XNNPACK.
+² int8 detector, fp32 recognizer; the fp32 detector is `XNNPACK_FP32`.
 
 `DEFAULT` picks Core ML on an iOS device, XNNPACK on the simulator, and Vulkan on Android when the
 app links it, else XNNPACK.
