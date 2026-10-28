@@ -17,11 +17,14 @@ function leaves(root: unknown, path: string[] = []): [string, Leaf][] {
   return Object.entries(root).flatMap(([key, value]) => leaves(value, [...path, key]));
 }
 
+// Every repository is pinned to its v0.10.0 cut, except PP-DocLayoutV3, whose
+// v0.11.0 cut carries the Vulkan export that runs (the v0.10.0 one fails at
+// execute).
 const URL_SHAPE =
-  /^https:\/\/huggingface\.co\/software-mansion\/react-native-executorch-(easy-ocr|pp-ocrv6|pp-doclayout-v3|paddle-helpers)\/resolve\/v0\.10\.0\/[a-z0-9_/]+\.pte$/;
+  /^https:\/\/huggingface\.co\/software-mansion\/react-native-executorch-(?:(easy-ocr|pp-ocrv6|paddle-helpers)\/resolve\/v0\.10\.0|(pp-doclayout-v3)\/resolve\/v0\.11\.0)\/[a-z0-9_/]+\.pte$/;
 
 describe('models registry', () => {
-  it('points every entry at a .pte under the v0.10.0 Hugging Face tag', () => {
+  it('points every entry at a .pte under its Hugging Face tag', () => {
     const all = leaves(models);
     // 8 EasyOCR alphabets + PP-OCRv6 + PP-DocLayout + PP-Helpers, 3 backends
     // plus DEFAULT each.
@@ -56,10 +59,10 @@ describe('models registry', () => {
       'v0.10.0/vulkan/pp_ocrv6_vulkan_fp16.pte'
     );
     expect(tail(models.layoutDetection.PP_DOCLAYOUT.XNNPACK)).toBe(
-      'v0.10.0/xnnpack/pp_doclayout_v3_xnnpack_fp32.pte'
+      'v0.11.0/xnnpack/pp_doclayout_v3_xnnpack_fp32.pte'
     );
     expect(tail(models.layoutDetection.PP_DOCLAYOUT.COREML)).toBe(
-      'v0.10.0/coreml/pp_doclayout_v3_coreml_fp16.pte'
+      'v0.11.0/coreml/pp_doclayout_v3_coreml_fp16.pte'
     );
     expect(tail(models.documentModels.PP_HELPERS.XNNPACK)).toBe(
       'v0.10.0/xnnpack/paddle_helpers_xnnpack_int8.pte'

@@ -21,6 +21,10 @@ import { variants } from './registry/variants';
 
 const BASE_URL = 'https://huggingface.co/software-mansion/react-native-executorch';
 const VERSION_TAG = 'resolve/v0.10.0';
+// PP-DocLayoutV3 alone has a v0.11.0 cut: its Vulkan export re-serialized with
+// one graph output per returned value, which the v0.10.0 one lacks (it failed
+// at execute). The other repositories stop at v0.10.0.
+const DOCLAYOUT_VERSION_TAG = 'resolve/v0.11.0';
 
 // =============================================================================
 // OCR
@@ -90,7 +94,7 @@ const PP_DOCLAYOUT_OPTS = {
 };
 const ppDocLayout = (backend: OcrBackend): ObjectDetectorModel<'xyxy', DocLayoutLabel> => ({
   modelPath:
-    `${BASE_URL}-pp-doclayout-v3/${VERSION_TAG}/${backend}/` +
+    `${BASE_URL}-pp-doclayout-v3/${DOCLAYOUT_VERSION_TAG}/${backend}/` +
     `pp_doclayout_v3_${backend}_${DOCLAYOUT_PRECISION[backend]}.pte`,
   modelOpts: PP_DOCLAYOUT_OPTS,
 });
