@@ -1,7 +1,7 @@
 name: Publish to npm
 
 # Publishes the package from CI with Software Mansion's shared action, as
-# react-native-rag does, so no one needs publish rights on the @swmansion npm
+# react-native-rag does, so no one needs publish rights on the @react-native-ocr npm
 # organisation on their own machine. Every input defaults to a dry run; a real
 # release sets dry-run off and, for the version commit and tag, git
 # operations on.
@@ -54,10 +54,10 @@ jobs:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org/
 
-      - name: Publish @swmansion/react-native-ocr
+      - name: Publish @react-native-ocr/core
         uses: software-mansion/npm-package-publish@22b6e632b4310c5c061a047bccc99d0cea88d2bb
         with:
-          package-name: '@swmansion/react-native-ocr'
+          package-name: '@react-native-ocr/core'
           package-json-path: 'package.json'
           install-dependencies-command: 'yarn install --immutable'
           release-type: ${{ inputs.release-type }}

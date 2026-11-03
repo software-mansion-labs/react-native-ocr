@@ -11,9 +11,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@react-native-ocr/core": "workspace:*",
     "@react-navigation/native": "^7.2.2",
     "@shopify/react-native-skia": "2.6.2",
-    "@swmansion/react-native-ocr": "workspace:*",
     "expo": "~56.0.9",
     "expo-build-properties": "~56.0.17",
     "expo-constants": "~56.0.17",

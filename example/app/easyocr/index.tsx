@@ -19,7 +19,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { models, useOcr, type OcrDetection, type Quad } from '@swmansion/react-native-ocr';
+import { models, useOcr, type OcrDetection, type Quad } from '@react-native-ocr/core';
 import expected from '../../assets/ocr/expected.json';
 import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';
