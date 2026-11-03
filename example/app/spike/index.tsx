@@ -27,7 +27,7 @@ import {
   rotateTensor,
   warpByGridTensor,
   type RotationDegrees,
-} from '@swmansion/react-native-ocr';
+} from '@react-native-ocr/core';
 import { Button } from '../../components/Button';
 import { commonStyles, theme } from '../../theme';
 

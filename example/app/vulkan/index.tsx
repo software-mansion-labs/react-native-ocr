@@ -7,7 +7,7 @@
 import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { download, loadModel, tensor, wrapAsync, type Model } from 'react-native-executorch';
-import { models } from '@swmansion/react-native-ocr';
+import { models } from '@react-native-ocr/core';
 import { Button } from '../../components/Button';
 import { commonStyles, theme } from '../../theme';
 

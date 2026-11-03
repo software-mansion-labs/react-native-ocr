@@ -29,7 +29,7 @@ libraries from a GitHub release pinned by `nativeLibsVersion` in its `package.js
 for react-native-executorch 0.11.0). Apps get the libraries their own react-native-executorch
 version pins.
 
-The package's version follows react-native-executorch's: `@swmansion/react-native-ocr` 0.11.x is
+The package's version follows react-native-executorch's: `@react-native-ocr/core` 0.11.x is
 built and tested against react-native-executorch 0.11, which is also where its peer dependency
 starts. Bump both together when moving to a new react-native-executorch minor.
 
@@ -218,7 +218,7 @@ the tarball as a workflow artifact, publishes with npm provenance, and with
 a protected `main` does not block it). The package has to allow the workflow as a trusted
 publisher on npm; that setting lives in the package's settings on npmjs.com, so the very first
 version is published by hand (see release-it below) by someone with publish rights in the
-`@swmansion` organisation, and the trusted publisher is added right after. Before a release:
+`@react-native-ocr` organisation, and the trusted publisher is added right after. Before a release:
 
 ```sh
 yarn typecheck && yarn lint && yarn test && yarn test:native

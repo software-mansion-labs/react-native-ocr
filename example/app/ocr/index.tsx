@@ -13,7 +13,7 @@ import {
   useOpticalCharacterRecognizer,
   type PaddleOcrModel,
 } from 'react-native-executorch';
-import { models, useOcr, type OcrDetection, type Quad } from '@swmansion/react-native-ocr';
+import { models, useOcr, type OcrDetection, type Quad } from '@react-native-ocr/core';
 import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';
 import { commonStyles, theme } from '../../theme';

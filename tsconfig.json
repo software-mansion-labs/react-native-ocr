@@ -3,7 +3,7 @@
     "rootDir": ".",
     "stripInternal": true,
     "paths": {
-      "@swmansion/react-native-ocr": ["./src/index"]
+      "@react-native-ocr/core": ["./src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

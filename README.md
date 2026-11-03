@@ -36,7 +36,7 @@ Use this package when you need what it leaves out.
 ## :package: Installation
 
 ```sh
-yarn add @swmansion/react-native-ocr react-native-executorch
+yarn add @react-native-ocr/core react-native-executorch
 ```
 
 Set up react-native-executorch first (`react-native-executorch` 0.11.0+, iOS 17+, Android API 26+,
@@ -54,7 +54,7 @@ New Architecture, a development build on Expo), then enable its `ocr` feature in
 ## :books: Usage
 
 ```tsx
-import { models, useOcr, type DocLayoutLabel } from '@swmansion/react-native-ocr';
+import { models, useOcr, type DocLayoutLabel } from '@react-native-ocr/core';
 
 const { isReady, downloadProgress, runOcr } = useOcr<DocLayoutLabel>({
   ...models.ocr.PADDLE.PPOCRV6_SMALL.DEFAULT,

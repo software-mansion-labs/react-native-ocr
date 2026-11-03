@@ -27,7 +27,7 @@ import {
   type OcrModel,
   type OcrResult,
   type Quad,
-} from '@swmansion/react-native-ocr';
+} from '@react-native-ocr/core';
 import expected from '../../assets/ocr/expected.json';
 import { Button } from '../../components/Button';
 import { ModelStatus } from '../../components/ModelStatus';

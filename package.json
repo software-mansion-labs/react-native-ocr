@@ -1,5 +1,5 @@
 {
-  "name": "@swmansion/react-native-ocr",
+  "name": "@react-native-ocr/core",
   "version": "0.11.0",
   "description": "Advanced on-device OCR for React Native on top of react-native-executorch: EasyOCR and PaddleOCR detection and recognition, vertical text, document layout, page orientation, dewarping and table structure.",
   "main": "./lib/module/index.js",

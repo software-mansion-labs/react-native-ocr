@@ -22,6 +22,6 @@ export const rnocrJsi: RnOcrJsi = globalObj.__rnocr_jsi__ as RnOcrJsi;
 if (!rnocrJsi) {
   throw RnExecuTorchError(
     'UNKNOWN',
-    "JSI global object '__rnocr_jsi__' is not registered. Make sure @swmansion/react-native-ocr is autolinked and the app was rebuilt."
+    "JSI global object '__rnocr_jsi__' is not registered. Make sure @react-native-ocr/core is autolinked and the app was rebuilt."
   );
 }
