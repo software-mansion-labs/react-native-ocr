@@ -2,6 +2,8 @@
 
 ![React Native OCR](https://github.com/user-attachments/assets/a1944a2a-a366-43a7-8dcd-5d5dfbba8730)
 
+Private, on-device OCR. Read text, layout and tables from pages and photos in React Native.
+
 Document OCR for React Native on top of
 [react-native-executorch](https://github.com/software-mansion/react-native-executorch): layout,
 tables, dewarping, page orientation, vertical text and EasyOCR alphabets, all on device.
@@ -10,7 +12,7 @@ For plain text detection and recognition, react-native-executorch's
 [`useOpticalCharacterRecognizer`](https://docs.swmansion.com/react-native-executorch/) is enough.
 Use this package when you need what it leaves out.
 
-> **Status: pre-release.** Nothing is published to npm yet.
+## Navigation
 
 - [:rocket: Features](#rocket-features)
 - [:package: Installation](#package-installation)
@@ -36,7 +38,7 @@ Use this package when you need what it leaves out.
 ## :package: Installation
 
 ```sh
-yarn add @react-native-ocr/core react-native-executorch
+npm install @react-native-ocr/core react-native-executorch
 ```
 
 Set up react-native-executorch first (`react-native-executorch` 0.11.0+, iOS 17+, Android API 26+,
